@@ -1,2 +1,21 @@
-# pbs-hooks-for-qrmi
-PBS Hook for Managing Quantum Resources via QRMI
+# PBS Hook for Managing Quantum Resources via QRMI
+
+This repository provides a PBS event hook that enables the management and execution of quantum jobs in PBS-based systems.
+The hook handles PBS resources associated with quantum computers and configures the execution environment so that PBS jobs can seamlessly run on quantum hardware.
+This PBS hook leverages the Python bindings of the [Quantum Resource Management Interface (QRMI)[(https://github.com/qiskit-community/qrmi) to interact with quantum resources in a scheduler-agnostic manner.
+
+## About QRMI
+QRMI is a vendor-agnostic library designed to control the state, execute tasks, and monitor the behavior of quantum computational resources, including qubits, QPUs, and entire quantum systems.
+QRMI acts as a thin middleware layer that abstracts away the complexity of interacting with quantum hardware. It provides a set of simple and consistent APIs to:
+
+- acquire and release quantum resources,
+- run quantum tasks, and
+- monitor the state of quantum systems.
+
+QRMI is implemented in Rust, with Python and C APIs exposed to enable straightforward integration into a wide range of computational environments and software stacks.
+
+## Motivation and Proof of Concept
+In addition to being vendor-agnostic, QRMI is intentionally designed and implemented to be resource-manager agnostic.
+While QRMI’s integration with Slurm has already progressed significantly—and deployments and evaluations are ongoing at HPC data centers worldwide—this repository aims to further validate that design goal.
+This Git repository serves as a proof of concept (PoC) to demonstrate the use of QRMI on OpenPBS, exploring how quantum resources can be managed and accessed via QRMI in a PBS-based environment.
+Through this PoC, we confirmed that QRMI largely fulfills its resource-manager-agnostic design objectives. Although some minor improvements and adjustments were identified, the experiment shows that QRMI can be effectively integrated with OpenPBS, reinforcing its applicability beyond Slurm-based systems.
