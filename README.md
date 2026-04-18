@@ -38,6 +38,7 @@ We encourage your feedback! You can share your thoughts with us by:
 - [Opening an issue](https://github.com/ohtanim/pbs-hooks-for-qrmi/issues) in the repository
 
 ## References and Acknowledgements
-1. [Quantum spank plugins for Slurm](https://github.com/qiskit-community/spank-plugins)
-2. [Quantum Resource Management Interface](https://github.com/qiskit-community/qrmi)
-3. [PBS Professional 2021.1.2 Hooks Guide](https://2021.help.altair.com/2021.1.2/PBS%20Professional/PBSHooks2021.1.2.pdf)
+1. [OpenPBS Github](https://github.com/openpbs/openpbs)
+2. [Quantum spank plugins for Slurm](https://github.com/qiskit-community/spank-plugins)
+3. [Quantum Resource Management Interface](https://github.com/qiskit-community/qrmi)
+4. [PBS Professional 2021.1.2 Hooks Guide](https://2021.help.altair.com/2021.1.2/PBS%20Professional/PBSHooks2021.1.2.pdf)
