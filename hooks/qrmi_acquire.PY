@@ -29,10 +29,13 @@ DEFAULT_WALLTIME = pbs.duration(21600)
 # Default PBS_HOME
 DEFAULT_PBS_HOME = "/var/spool/pbs"
 
+
 def get_pbs_home():
     """Read PBS_HOME from /etc/pbs.conf"""
     try:
-        with open("/etc/pbs.conf", "r", encoding="utf-8") as conf_file:
+        # PBS_CONF_FILE is always configured by pbs_postinstall, and system administrators
+        # may override the default path (/etc/pbs.conf) if needed.
+        with open(os.environ.get("PBS_CONF_FILE"), "r", encoding="utf-8") as conf_file:
             for line in conf_file:
                 line = line.strip()
                 if line.startswith("PBS_HOME="):
@@ -54,6 +57,8 @@ try:
     if walltime is None:
         walltime = DEFAULT_WALLTIME
 
+    # We assume that qrmi_config.json is located in the $PBS_HOME/mom_priv directory,
+    # which is not accessible by PBS users.
     cfg_path = os.path.join(get_pbs_home(), "mom_priv", "qrmi_config.json")
     with open(cfg_path, "r", encoding="utf8") as f:
         cfg_json = json.load(f)
