@@ -24,7 +24,7 @@ RES_TYPE_MAP = {
 }
 
 # Default is 6 hours
-DEFAULT_WALLTIME = 21600 
+DEFAULT_WALLTIME = pbs.duration(21600)
 
 # Default PBS_HOME
 DEFAULT_PBS_HOME = "/var/spool/pbs"
