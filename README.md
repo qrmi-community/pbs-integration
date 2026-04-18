@@ -25,3 +25,19 @@ The PBS hooks implemented in this repository **largely replicate the functionali
 This close functional correspondence strongly indicates that the boundary between QRMI and the resource manager is correctly designed.
 By keeping resource-manager-specific logic confined to hooks or plugins, and delegating quantum resource control to QRMI, the architecture cleanly separates responsibilities and avoids scheduler-specific assumptions within QRMI itself.
 As a result, this work further substantiates QRMI’s design goal of being a **resource-manager-agnostic middleware layer**, capable of supporting multiple workload managers with minimal adaptation effort.
+
+## Table of Contents
+
+1. [Installing PBS](./docs/PBS_INSTALL.md)
+2. [Installing QRMI](./docs/QRMI_INSTALL.md)
+3. [Running QRMI examples](./docs/RUN_QRMI.md)
+
+## How to Give Feedback
+
+We encourage your feedback! You can share your thoughts with us by:
+- [Opening an issue](https://github.com/ohtanim/pbs-hooks-for-qrmi/issues) in the repository
+
+## References and Acknowledgements
+1. [Quantum spank plugins for Slurm](https://github.com/qiskit-community/spank-plugins)
+2. [Quantum Resource Management Interface](https://github.com/qiskit-community/qrmi)
+3. [PBS Professional 2021.1.2 Hooks Guide](https://2021.help.altair.com/2021.1.2/PBS%20Professional/PBSHooks2021.1.2.pdf)
