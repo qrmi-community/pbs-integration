@@ -26,6 +26,14 @@ This close functional correspondence strongly indicates that the boundary betwee
 By keeping resource-manager-specific logic confined to hooks or plugins, and delegating quantum resource control to QRMI, the architecture cleanly separates responsibilities and avoids scheduler-specific assumptions within QRMI itself.
 As a result, this work further substantiates QRMI’s design goal of being a **resource-manager-agnostic middleware layer**, capable of supporting multiple workload managers with minimal adaptation effort.
 
+## Findings from the PoC
+- In PBS, when a comma-separated string is specified as the value of an environment variable, everything after the first comma is truncated.
+For example, if ```ENV=VAR1,VAR2``` is specified, only ```ENV=VAR1``` is set at job execution time.
+This becomes a problem when trying to use multiple Quantum Resources with QRMI, since ```SLURM_JOB_QPU_RESOURCES``` and ```SLURM_JOB_QPU_TYPES``` contain comma-separated values.
+- The ```execjob_begin``` and ```execjob_end``` hooks in PBS are executed in separate Python interpreter processes (whereas in Slurm, SPANK plugins are invoked within the same process).
+As a result, sharing data between these hooks requires serializing the data into job.Variable_List and passing it via environment variable values.
+- ```SLURM_JOB_QPU_RESOURCES``` and ```SLURM_JOB_QPU_TYPES```, which are used internally by QRMI, should be renamed.
+
 ## Table of Contents
 
 1. [Installing PBS](./docs/PBS_INSTALL.md)
