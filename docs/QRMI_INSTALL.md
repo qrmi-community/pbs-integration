@@ -69,7 +69,7 @@ To achieve similar functionality in PBS, a consumable resource needs to be defin
 sudo bash
 ```
 
-Define ```qpu`` resource as consumable resource.
+Define ```qpu``` resource as consumable resource.
 ```bash
 qmgr -c "create resource qpu type=long, flag=nh"
 qmgr -c "set node <your node name> resources_available.qpu=1"
@@ -128,12 +128,12 @@ rocky-linux-9-pbs
      last_used_time = Sun Apr 19 22:03:11 2026
 ```
 
-After ```qpu`` resource is defined, PBS users can request the number of quantum resources for each job.
+After ```qpu``` resource is defined, PBS users can request the number of quantum resources for each job.
 ```bash
 #PBS -l select=1:ncpus=1:mem=2gb:qpu=1
 ```
 
-## For PBS Users
+## Required Setup for Each PBS User
 The following steps must be executed for each user who will use PBS.
 ```bash
 python3.12 -m venv ~/pyenv
