@@ -14,13 +14,16 @@ sys.path.insert(0, "/opt/pbs/python/site-packages")
 
 from qrmi import QuantumResource, ResourceType
 
-res_type_map = {
+RES_TYPE_MAP = {
     "direct-access": ResourceType.IBMQiskitRuntimeService,
     "quantum-system": ResourceType.IBMQiskitRuntimeService,
     "qiskit-runtime-service": ResourceType.IBMQiskitRuntimeService,
     "pasqal-cloud": ResourceType.PasqalCloud,
     "pasqal-local": ResourceType.PasqalLocal,
 }
+
+# Delimiter for list string
+QRMI_LIST_DELIMITER = ":"
 
 e = pbs.event()
 j = e.job
@@ -30,8 +33,8 @@ restypes = j.Variable_List.get("SLURM_JOB_QPU_TYPES")
 if resnames is None or restypes is None:
     e.accept()
 
-names = resnames.split(",")
-types = restypes.split(",")
+names = resnames.split(QRMI_LIST_DELIMITER)
+types = restypes.split(QRMI_LIST_DELIMITER)
 
 try:
     if j.Variable_List is None:
@@ -53,7 +56,7 @@ try:
 
         # Release quantum resources, which were acquired in execjob_begin
         try:
-            qrmi = QuantumResource(name, res_type_map.get(types[idx]))
+            qrmi = QuantumResource(name, RES_TYPE_MAP.get(types[idx]))
             if qrmi is None:
                 continue
             qrmi.release(token)

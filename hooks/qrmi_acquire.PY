@@ -29,6 +29,9 @@ DEFAULT_WALLTIME = pbs.duration(21600)
 # Default PBS_HOME
 DEFAULT_PBS_HOME = "/var/spool/pbs"
 
+# Delimiter for list string
+QRMI_LIST_DELIMITER = ":"
+
 
 def get_pbs_home():
     """Read PBS_HOME from /etc/pbs.conf"""
@@ -66,7 +69,7 @@ try:
 
         resource_names = []
         resource_types = []
-        for name in resources.split(","):
+        for name in resources.split(QRMI_LIST_DELIMITER):
             name = name.strip()
             cfg = cfg_by_name.get(name)
             if cfg is None:
@@ -112,6 +115,8 @@ try:
                 # if resource acquisition succeeded, add this resource to verified list
                 resource_names.append(name)
                 resource_types.append(cfg["type"])
+                pbs.logmsg(pbs.EVENT_DEBUG, str(resource_names),)
+                pbs.logmsg(pbs.EVENT_DEBUG, str(resource_types),)
 
             except RuntimeError as re:
                 pbs.logmsg(
@@ -127,8 +132,12 @@ try:
             )
             e.reject(ERR_TXT)
 
-        j.Variable_List["SLURM_JOB_QPU_RESOURCES"] = ",".join(resource_names)
-        j.Variable_List["SLURM_JOB_QPU_TYPES"] = ",".join(resource_types)
+        j.Variable_List["SLURM_JOB_QPU_RESOURCES"] = QRMI_LIST_DELIMITER.join(resource_names)
+        j.Variable_List["SLURM_JOB_QPU_TYPES"] = QRMI_LIST_DELIMITER.join(resource_types)
+        j.Variable_List["QRMI_LIST_DELIMITER"] = QRMI_LIST_DELIMITER
+
+        pbs.logmsg(pbs.EVENT_DEBUG, j.Variable_List["SLURM_JOB_QPU_RESOURCES"],)
+        pbs.logmsg(pbs.EVENT_DEBUG, j.Variable_List["SLURM_JOB_QPU_TYPES"],)
 
     e.accept()
 
