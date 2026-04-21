@@ -20,6 +20,20 @@ While QRMI’s integration with Slurm has already progressed significantly—and
 This Git repository serves as a **proof of concept (PoC)** to demonstrate the use of QRMI on **OpenPBS**, exploring how quantum resources can be managed and accessed via QRMI in a PBS-based environment.
 Through this PoC, we confirmed that QRMI largely fulfills its resource-manager-agnostic design objectives. Although some minor improvements and adjustments were identified, the experiment shows that QRMI can be effectively integrated with OpenPBS, reinforcing its applicability beyond Slurm-based systems.
 
+## Spank plugins vs. PBS Hooks
+|| Spank plugins | PBS Hooks |
+| ---- | ---- | ---- |
+| Implementation language | C(shared library ```.so```) | Python(script) |
+| Deployment | Compiled ```.so``` distributed to each node manually | Registered via ```qmgr```; server distributes automatically |
+| Execution location | ```slurmctld``` (controller) or ```slurmd``` (compute node), depending on context | PBS Server or MOM (compute node), selected per hook type |
+| Hook/callback list | ```slurm_spank_init```, ```task_init```, ```task_exit```, etc. — ~10+ callbacks. Custom options via spank_option. | ```queuejob```, ```runjob```, ```execjob_begin```, ```execjob_end```, ```execjob_epilogue```, etc. — 20+ event types |
+| Job info access | SPANK API (```spank_get_item```, etc.) to read C structs | ```pbs.event().job``` object — attributes readable and writable directly |
+| Job rejection / modification | [Limited] Return an error code to abort; modifying attributes is difficult | [Flexible] ```event.reject()``` and attribute rewriting are straightforward |
+| Environment variable passing | ```spank_setenv``` / ```spank_getenv``` for direct manipulation | Via ```job.Variable_List```; accessible as ```$PBS_VAR``` inside the job script |
+| Custom resource integration | Add SPANK options to ```sbatch``` and combine with GRES, etc. | Define custom resources via ```qmgr```; specify in select or ```-l```; read inside the hook |
+| Logging / debugging | ```slurm_info```, ```slurm_error``` → slurmd log | ```pbs.logmsg()``` → PBS server log (configurable log level) |
+| Code update | C source must be rebuilt and redeployed on every change | Re-register the updated Python script with qmgr |
+
 ## Design Validation: Boundary Between QRMI and Resource Managers
 The PBS hooks implemented in this repository **largely replicate the functionality already provided by the [Slurm SPANK plugins](https://github.com/qiskit-community/spank-plugins)**, reimplementing equivalent behavior on top of OpenPBS.
 This close functional correspondence strongly indicates that the boundary between QRMI and the resource manager is correctly designed.
