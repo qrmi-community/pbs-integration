@@ -4,7 +4,7 @@
 #PBS -l walltime=00:10:00
 #PBS -j oe
 #PBS -m bae
-#PBS -v SLURM_JOB_QPU_RESOURCES=ibm_sherbrooke
+#PBS -v QRMI_QPU_RESOURCES=ibm_sherbrooke
 
 # To allocate multiple quantum resources, specify the resource identifiers separated by colons.
 # #PBS -v SLURM_JOB_QPU_RESOURCES=ibm_sherbrooke:ibm_torino

@@ -52,7 +52,7 @@ e = pbs.event()
 j = e.job
 
 try:
-    resources = j.Variable_List.get("SLURM_JOB_QPU_RESOURCES")
+    resources = j.Variable_List.get("QRMI_QPU_RESOURCES")
     if resources is None:
         e.accept()
 
