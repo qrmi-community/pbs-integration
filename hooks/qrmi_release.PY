@@ -20,6 +20,8 @@ RES_TYPE_MAP = {
     "qiskit-runtime-service": ResourceType.IBMQiskitRuntimeService,
     "pasqal-cloud": ResourceType.PasqalCloud,
     "pasqal-local": ResourceType.PasqalLocal,
+    "iqm-server": ResourceType.IQMServer,
+    "alice-bob-felis": ResourceType.AliceBobFelis,
 }
 
 # Delimiter for list string
@@ -28,8 +30,8 @@ QRMI_LIST_DELIMITER = ":"
 e = pbs.event()
 j = e.job
 
-resnames = j.Variable_List.get("SLURM_JOB_QPU_RESOURCES")
-restypes = j.Variable_List.get("SLURM_JOB_QPU_TYPES")
+resnames = j.Variable_List.get("QRMI_JOB_QPU_RESOURCES")
+restypes = j.Variable_List.get("QRMI_JOB_QPU_TYPES")
 if resnames is None or restypes is None:
     e.accept()
 
