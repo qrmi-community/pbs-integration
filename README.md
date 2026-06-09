@@ -46,7 +46,7 @@ For example, if ```ENV=VAR1,VAR2``` is specified, only ```ENV=VAR1``` is set at 
 This becomes a problem when trying to use multiple Quantum Resources with QRMI, since ```SLURM_JOB_QPU_RESOURCES``` and ```SLURM_JOB_QPU_TYPES``` contain comma-separated values.
 - The ```execjob_begin``` and ```execjob_end``` hooks in PBS are executed in separate Python interpreter processes (whereas in Slurm, SPANK plugins are invoked within the same process).
 As a result, sharing data between these hooks requires serializing the data into job.Variable_List and passing it via environment variable values.
-- ```SLURM_JOB_QPU_RESOURCES``` and ```SLURM_JOB_QPU_TYPES```, which are used internally by QRMI, should be renamed.
+- ~~```SLURM_JOB_QPU_RESOURCES``` and ```SLURM_JOB_QPU_TYPES```, which are used internally by QRMI, should be renamed.~~(Resource manager agnostic environment variables were implemented in QRMI).
 
 ## Table of Contents
 

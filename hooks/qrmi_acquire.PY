@@ -21,6 +21,8 @@ RES_TYPE_MAP = {
     "qiskit-runtime-service": ResourceType.IBMQiskitRuntimeService,
     "pasqal-cloud": ResourceType.PasqalCloud,
     "pasqal-local": ResourceType.PasqalLocal,
+    "iqm-server": ResourceType.IQMServer,
+    "alice-bob-felis": ResourceType.AliceBobFelis,
 }
 
 # Default is 6 hours
@@ -132,12 +134,12 @@ try:
             )
             e.reject(ERR_TXT)
 
-        j.Variable_List["SLURM_JOB_QPU_RESOURCES"] = QRMI_LIST_DELIMITER.join(resource_names)
-        j.Variable_List["SLURM_JOB_QPU_TYPES"] = QRMI_LIST_DELIMITER.join(resource_types)
+        j.Variable_List["QRMI_JOB_QPU_RESOURCES"] = QRMI_LIST_DELIMITER.join(resource_names)
+        j.Variable_List["QRMI_JOB_QPU_TYPES"] = QRMI_LIST_DELIMITER.join(resource_types)
         j.Variable_List["QRMI_LIST_DELIMITER"] = QRMI_LIST_DELIMITER
 
-        pbs.logmsg(pbs.EVENT_DEBUG, j.Variable_List["SLURM_JOB_QPU_RESOURCES"],)
-        pbs.logmsg(pbs.EVENT_DEBUG, j.Variable_List["SLURM_JOB_QPU_TYPES"],)
+        pbs.logmsg(pbs.EVENT_DEBUG, j.Variable_List["QRMI_JOB_QPU_RESOURCES"],)
+        pbs.logmsg(pbs.EVENT_DEBUG, j.Variable_List["QRMI_JOB_QPU_TYPES"],)
 
     e.accept()
 
