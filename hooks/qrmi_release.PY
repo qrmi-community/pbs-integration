@@ -15,13 +15,12 @@ sys.path.insert(0, "/opt/pbs/python/site-packages")
 from qrmi import QuantumResource, ResourceType
 
 RES_TYPE_MAP = {
-    "direct-access": ResourceType.IBMQiskitRuntimeService,
-    "quantum-system": ResourceType.IBMQiskitRuntimeService,
+    "quantum-system": ResourceType.IBMQuantumSystem,
     "qiskit-runtime-service": ResourceType.IBMQiskitRuntimeService,
     "pasqal-cloud": ResourceType.PasqalCloud,
     "pasqal-local": ResourceType.PasqalLocal,
-    "iqm-server": ResourceType.IQMServer,
     "alice-bob-felis": ResourceType.AliceBobFelis,
+    "iqm-server": ResourceType.IQMServer,
 }
 
 # Delimiter for list string
