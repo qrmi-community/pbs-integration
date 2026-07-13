@@ -13,7 +13,7 @@ sudo python3.12 -m pip install --target /opt/pbs/python/site-packages qrmi
 
 ## Create and Install qrmi_config.json
 - Create [qrmi_config.json](https://github.com/qiskit-community/spank-plugins/blob/main/plugins/spank_qrmi/qrmi_config.json.example) and define quantum resources to use.
-- Copy this file to /var/spool/pbs/mom_priv/qrmi_config.json
+- Copy this file to $PBS_HOME/mom_priv/qrmi_config.json and $PBS_HOME/server_priv/qrmi_config.json 
 
 ## Install PBS Hooks for QRMI
 ```bash
@@ -21,7 +21,7 @@ cd ~/pbs-hooks-for-qrmi/hooks
 sudo bash
 qmgr -c "create hook qrmi_acquire"
 qmgr -c "import hook qrmi_acquire application/x-python default qrmi_acquire.PY"
-qmgr -c "set hook qrmi_acquire event=execjob_begin"
+qmgr -c "set hook qrmi_acquire event=runjob"
 qmgr -c "set hook qrmi_acquire enabled=true"
 qmgr -c "set hook qrmi_acquire debug=true"
 
@@ -43,7 +43,7 @@ You must be able to see:
 Hook qrmi_acquire
     type = site
     enabled = true
-    event = execjob_begin
+    event = runjob
     user = pbsadmin
     alarm = 30
     order = 1
@@ -61,24 +61,21 @@ Hook qrmi_release
     fail_action = none
 ```
 
-## (Optional) Define PBS consumable resource for Quantum resource
-In Slurm, job scheduling supports specifying consumable resource counts using the GRES option, such as ```--gres=qpu:1```.
-To achieve similar functionality in PBS, a consumable resource needs to be defined.
+## Define PBS consumable resource for Quantum resource
+
+Create a custom resource used to specify which quantum resources user's jobs should use.
+This resource is not tied to node hardware allocation — it's simply carried along with the job. Its value is read by a `runjob` hook and exported into the job's execution environment for QRMI.
+
+
+### Setup
 
 ```bash
 sudo bash
+qmgr -c "create resource quantum_resources type=string_array"
 ```
 
-Define ```qpu``` resource as consumable resource.
-```bash
-qmgr -c "create resource qpu type=long, flag=nh"
-qmgr -c "set node <your node name> resources_available.qpu=1"
-```
-
-Edit vi ```$PBS_HOME/sched_priv/sched_config``` and append ```qpu``` to ```resources``` value like below.
-```bash
-resources: "ncpus, mem, arch, host, vnode, aoe, eoe, qpu"
-```
+> [!NOTE]
+> You don't need to edit ```resources``` value in ```$PBS_HOME/sched_priv/sched_config```.
 
 Restart PBS
 ```bash
@@ -87,51 +84,36 @@ systemctl restart pbs
 
 Verify qpu resource is available.
 ```bash
-qmgr -c "print resource qpu"
-
+qmgr -c "print resource quantum_resources"
 #
-# Create and define resource qpu
+# Create and define resource quantum_resources
 #
-create resource qpu
-set resource qpu type = long
-set resource qpu flag = hn
+create resource quantum_resources
+set resource quantum_resources type = string_array
 ```
 
-Verify ```resources_available.qpu``` is available.
+### Usage
+
+Specify it in your job script like this:
+
 ```bash
-pbsnodes -av
-
-rocky-linux-9-pbs
-     Mom = rocky-linux-9-pbs.shared
-     Port = 15002
-     pbs_version = 23.06.06
-     ntype = PBS
-     state = free
-     pcpus = 2
-     resources_available.arch = linux
-     resources_available.host = rocky-linux-9-pbs
-     resources_available.mem = 7781256kb
-     resources_available.ncpus = 1
-     resources_available.qpu = 1
-     resources_available.vnode = rocky-linux-9-pbs
-     resources_assigned.accelerator_memory = 0kb
-     resources_assigned.hbmem = 0kb
-     resources_assigned.mem = 0kb
-     resources_assigned.naccelerators = 0
-     resources_assigned.ncpus = 0
-     resources_assigned.qpu = 0
-     resources_assigned.vmem = 0kb
-     resv_enable = True
-     sharing = default_shared
-     license = l
-     last_state_change_time = Sun Apr 19 22:02:43 2026
-     last_used_time = Sun Apr 19 22:03:11 2026
+#PBS -l quantum_resources=ibm_kingston
 ```
 
-After ```qpu``` resource is defined, PBS users can request the number of quantum resources for each job.
+To request multiple backends, separate them with commas. In this case, the value must be wrapped in **nested quotes**, since an unquoted comma would otherwise be interpreted as the `-l` option's own separator between different resources:
+
 ```bash
-#PBS -l select=1:ncpus=1:mem=2gb:qpu=1
+#PBS -l quantum_resources='"ibm_kingston,ibm_kobe"'
 ```
+
+### Verifying
+
+To confirm the value was correctly attached to a submitted job:
+
+```bash
+qstat -f <JOBID> | grep quantum_resources
+```
+
 
 ## Required Setup for Each PBS User
 The following steps must be executed for each user who will use PBS.
@@ -139,5 +121,5 @@ The following steps must be executed for each user who will use PBS.
 python3.12 -m venv ~/pyenv
 source ~/pyenv/bin/activate
 pip install --upgrade pip
-pip install qrmi
+pip install qrmi[ibm]
 ```

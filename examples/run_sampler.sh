@@ -2,12 +2,12 @@
 #PBS -N run_sampler
 #PBS -l select=1:ncpus=1:mem=2gb
 #PBS -l walltime=00:10:00
+#PBS -l quantum_resources=ibm_fez
 #PBS -j oe
 #PBS -m bae
-#PBS -v QRMI_QPU_RESOURCES=ibm_sherbrooke
 
 # To allocate multiple quantum resources, specify the resource identifiers separated by colons.
-# #PBS -v SLURM_JOB_QPU_RESOURCES=ibm_sherbrooke:ibm_torino
+# #PBS -l quantum_resources='"ibm_marrakesh,ibm_kobe"'
 
 # Change to the directory where the job was submitted
 cd $PBS_O_WORKDIR              
