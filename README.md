@@ -48,7 +48,7 @@ Despite this difference in timing, the close functional correspondence between t
 ## Findings from the PoC
 - In PBS, when a comma-separated string is specified as the value of an environment variable, everything after the first comma is truncated.
 For example, if ```ENV=VAR1,VAR2``` is specified, only ```ENV=VAR1``` is set at job execution time.
-This becomes a problem when trying to use multiple Quantum Resources with QRMI, since ```SLURM_JOB_QPU_RESOURCES``` and ```SLURM_JOB_QPU_TYPES``` contain comma-separated values.
+This becomes a problem when trying to use multiple Quantum Resources with QRMI, since ```QRMI_JOB_QPU_RESOURCES``` and ```QRMI_JOB_QPU_TYPES``` contain comma-separated values. QRMI allows specifying a delimiter other than a comma via the ```QRMI_LIST_DELIMITER``` environment variable, so this hook uses a colon instead. 
 - The ```runjob``` and ```execjob_end``` hooks in PBS are executed in separate Python interpreter processes (whereas in Slurm, SPANK plugins are invoked within the same process).
 As a result, sharing data between these hooks requires serializing the data into job.Variable_List and passing it via environment variable values.
 
