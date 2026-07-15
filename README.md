@@ -1,5 +1,9 @@
 # PBS Hook for Managing Quantum Resources via QRMI
 
+[![License](https://img.shields.io/github/license/qrmi-community/pbs-integration.svg?)](https://opensource.org/licenses/Apache-2.0) <!--- long-description-skip-begin -->
+[![Current Release](https://img.shields.io/github/release/qrmi-community/pbs-integration.svg?)](https://github.com/qrmi-community/pbs-integration/releases)
+[![DOI](https://zenodo.org/badge/1300718668.svg)](https://doi.org/10.5281/zenodo.21370929)
+
 This repository provides a PBS event hook that enables the execution of quantum jobs in PBS-based systems. The hook reads a custom PBS resource that specifies which quantum backend a job requests, and configures the execution environment so that PBS jobs can seamlessly run on quantum hardware. This PBS hook leverages the **Python bindings of the [Quantum Resource Management Interface (QRMI)](https://github.com/qiskit-community/qrmi)** to interact with quantum resources in a scheduler-agnostic manner.
 
 This repository implements two PBS hooks — ```runjob``` and ```execjob_end``` — to manage the full lifecycle of quantum resource acquisition and release.
