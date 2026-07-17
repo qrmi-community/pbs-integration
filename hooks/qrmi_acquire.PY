@@ -1,4 +1,4 @@
- SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0
 """PBS hook for managing quantum resources via QRMI.
 This hook services the following events:
 - runjob
