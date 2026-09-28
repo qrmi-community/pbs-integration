@@ -21,6 +21,7 @@ RES_TYPE_MAP = {
     "pasqal-local": ResourceType.PasqalLocal,
     "alice-bob-felis": ResourceType.AliceBobFelis,
     "iqm-server": ResourceType.IQMServer,
+    # "oqtopus": ResourceType.OQTOPUS,
 }
 
 # Delimiter for list string
