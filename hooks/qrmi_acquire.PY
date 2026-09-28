@@ -13,7 +13,7 @@ import pbs
 
 sys.path.insert(0, "/opt/pbs/python/site-packages")
 
-from qrmi import QuantumResource, ResourceType
+from qrmi import QuantumResource, ResourceType, ResourceStatusCode
 
 RES_TYPE_MAP = {
     "quantum-system": ResourceType.IBMQuantumSystem,
@@ -22,6 +22,7 @@ RES_TYPE_MAP = {
     "pasqal-local": ResourceType.PasqalLocal,
     "alice-bob-felis": ResourceType.AliceBobFelis,
     "iqm-server": ResourceType.IQMServer,
+    # "oqtopus": ResourceType.OQTOPUS,
 }
 
 # Default is 6 hours
@@ -41,6 +42,7 @@ def get_pbs_home():
         return pbs_conf["PBS_HOME"]
 
     return DEFAULT_PBS_HOME  # fallback
+
 
 def get_pbs_res(res_name, pbs_job, default_value=None):
     """Returns PBS resource value"""
@@ -101,7 +103,16 @@ try:
 
             try:
                 qrmi = QuantumResource(name, RES_TYPE_MAP.get(cfg["type"]))
-                if qrmi.is_accessible() is False:
+                pbs.logmsg(
+                    pbs.LOG_DEBUG,
+                    f"resource_type = {qrmi.resource_type()}, resource_id={qrmi.resource_id()}",
+                )
+                status = qrmi.status().to_dict()
+                pbs.logmsg(
+                    pbs.LOG_DEBUG,
+                    f"status = {json.dumps(status, indent=2)}",
+                )
+                if qrmi.status().status != ResourceStatusCode.Online:
                     # The quantum resource cannot accept jobs due to maintenance,
                     # calibration, or other operational activities.
                     pbs.logmsg(
@@ -147,9 +158,7 @@ try:
         job.Variable_List["QRMI_JOB_QPU_RESOURCES"] = QRMI_LIST_DELIMITER.join(
             res_names
         )
-        job.Variable_List["QRMI_JOB_QPU_TYPES"] = QRMI_LIST_DELIMITER.join(
-            res_types
-        )
+        job.Variable_List["QRMI_JOB_QPU_TYPES"] = QRMI_LIST_DELIMITER.join(res_types)
         job.Variable_List["QRMI_LIST_DELIMITER"] = QRMI_LIST_DELIMITER
 
         pbs.logmsg(
