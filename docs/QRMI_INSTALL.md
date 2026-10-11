@@ -37,14 +37,6 @@ Five hooks handle the request at different points of the job life cycle:
 | `qrmi_launch` | `execjob_launch` | compute nodes | Adds the resource settings (endpoints, API keys) and the acquisition tokens to the environment of the job processes |
 | `qrmi_release` | `execjob_end` | first compute node of the job | Releases the acquired resources when the job ends or is deleted, and removes the token file |
 
-```
-            pbs-server                         |               first compute node of the job
-                                               |
-qsub ──> qrmi_validate ──> queue ──> qrmi_check ──> qrmi_acquire ──> qrmi_launch ──> job ──> qrmi_release
-         (reject invalid)   ^        (online?   |   (acquire QPU,    (settings and          (release QPU,
-                            |         not busy?)|    save tokens)     tokens to job env)     remove tokens)
-                            └── not available ──┘
-```
 
 <p align="center">
   <img src="images/qrmi-hooks-overview.png" width="900">
@@ -178,6 +170,7 @@ Copy the hook files into the shared directory on the host:
 ```bash
 mkdir -p shared/qrmi-hooks
 cp qrmi_*.PY install_qrmi_hooks.sh shared/qrmi-hooks/
+cp ../hooks/qrmi_*.PY ../hooks/install_qrmi_hooks.sh shared/qrmi-hooks/
 ```
 
 Run the installation script on `pbs-server`, then restart the server:
