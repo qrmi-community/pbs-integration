@@ -58,7 +58,7 @@ As a result, sharing data between these hooks requires serializing the data into
 
 ## Table of Contents
 
-1. [Installing PBS](./docs/PBS_INSTALL.md)
+1. [Creating OpenPBS containers](./containers/README.md)
 2. [Installing QRMI](./docs/QRMI_INSTALL.md)
 3. [Running QRMI examples](./docs/RUN_QRMI.md)
 

@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4b5563"/>
+    </marker>
+    <marker id="arrMpi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/>
+    </marker>
+  </defs>
+
+  <!-- background -->
+  <rect x="0" y="0" width="1280" height="760" fill="#ffffff"/>
+
+  <!-- Host -->
+  <rect x="20" y="20" width="1240" height="720" rx="14" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="40" y="50" font-size="18" font-weight="bold" fill="#334155">Host</text>
+  <text x="92" y="50" font-size="15" fill="#64748b">macOS (Apple silicon / Intel)  or  Windows + WSL2</text>
+
+  <!-- Container runtime -->
+  <rect x="200" y="70" width="1040" height="650" rx="12" fill="#ffffff" stroke="#64748b" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <text x="220" y="98" font-size="16" font-weight="bold" fill="#334155">Container runtime (Podman / Docker)</text>
+  <text x="220" y="120" font-size="14" fill="#64748b">network: pbsnet 172.30.0.0/24  ·  image: Rocky Linux 9 + OpenPBS + Open MPI</text>
+
+  <!-- User -->
+  <circle cx="95" cy="168" r="16" fill="#e2e8f0" stroke="#475569" stroke-width="1.5"/>
+  <path d="M65,222 Q95,184 125,222 Z" fill="#e2e8f0" stroke="#475569" stroke-width="1.5"/>
+  <text x="95" y="246" font-size="15" font-weight="bold" fill="#334155" text-anchor="middle">User</text>
+  <line x1="130" y1="200" x2="466" y2="200" stroke="#4b5563" stroke-width="1.8" marker-end="url(#arr)"/>
+  <text x="300" y="190" font-size="13" fill="#475569" text-anchor="middle">podman exec -it -u pbsuser pbs-server</text>
+
+  <!-- pbs-server -->
+  <rect x="470" y="140" width="500" height="170" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="490" y="170" font-size="19" font-weight="bold" fill="#1e3a8a">pbs-server</text>
+  <text x="950" y="170" font-size="14" fill="#1e40af" text-anchor="end">172.30.0.10</text>
+  <text x="490" y="192" font-size="14" fill="#1e40af">PBS server / job submission host</text>
+  <g font-size="13.5" fill="#1e3a8a">
+    <rect x="490" y="206" width="104" height="30" rx="6" fill="#dbeafe" stroke="#93c5fd"/>
+    <text x="542" y="226" text-anchor="middle">pbs_server</text>
+    <rect x="604" y="206" width="100" height="30" rx="6" fill="#dbeafe" stroke="#93c5fd"/>
+    <text x="654" y="226" text-anchor="middle">pbs_sched</text>
+    <rect x="714" y="206" width="100" height="30" rx="6" fill="#dbeafe" stroke="#93c5fd"/>
+    <text x="764" y="226" text-anchor="middle">pbs_comm</text>
+    <rect x="824" y="206" width="126" height="30" rx="6" fill="#dbeafe" stroke="#93c5fd"/>
+    <text x="887" y="226" text-anchor="middle">PostgreSQL</text>
+  </g>
+  <text x="490" y="262" font-size="13.5" fill="#1e3a8a">qsub · qstat · qmgr · pbsnodes · tracejob</text>
+  <text x="490" y="284" font-size="13.5" fill="#1e3a8a">hooks run on embedded Python 3.12</text>
+
+  <!-- TPP arrows server -> moms -->
+  <line x1="640" y1="312" x2="500" y2="396" stroke="#4b5563" stroke-width="1.8" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <line x1="800" y1="312" x2="940" y2="396" stroke="#4b5563" stroke-width="1.8" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <text x="720" y="352" font-size="13" fill="#475569" text-anchor="middle">TPP via pbs_comm</text>
+  <text x="720" y="370" font-size="13" fill="#475569" text-anchor="middle">(port 17001)</text>
+
+  <!-- pbs-node1 -->
+  <rect x="260" y="400" width="400" height="160" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="280" y="430" font-size="19" font-weight="bold" fill="#14532d">pbs-node1</text>
+  <text x="640" y="430" font-size="14" fill="#166534" text-anchor="end">172.30.0.11</text>
+  <text x="280" y="452" font-size="14" fill="#166534">Execution host</text>
+  <g font-size="13.5" fill="#14532d">
+    <rect x="280" y="466" width="90" height="30" rx="6" fill="#dcfce7" stroke="#86efac"/>
+    <text x="325" y="486" text-anchor="middle">pbs_mom</text>
+    <rect x="380" y="466" width="260" height="30" rx="6" fill="#dcfce7" stroke="#86efac"/>
+    <text x="510" y="486" text-anchor="middle">Open MPI 4.1.8 (--with-tm)</text>
+    <rect x="280" y="506" width="360" height="30" rx="6" fill="#dcfce7" stroke="#86efac"/>
+    <text x="460" y="526" text-anchor="middle">Python 3.12 + mpi4py · Rust toolchain</text>
+  </g>
+
+  <!-- pbs-node2 -->
+  <rect x="780" y="400" width="400" height="160" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="800" y="430" font-size="19" font-weight="bold" fill="#14532d">pbs-node2</text>
+  <text x="1160" y="430" font-size="14" fill="#166534" text-anchor="end">172.30.0.12</text>
+  <text x="800" y="452" font-size="14" fill="#166534">Execution host</text>
+  <g font-size="13.5" fill="#14532d">
+    <rect x="800" y="466" width="90" height="30" rx="6" fill="#dcfce7" stroke="#86efac"/>
+    <text x="845" y="486" text-anchor="middle">pbs_mom</text>
+    <rect x="900" y="466" width="260" height="30" rx="6" fill="#dcfce7" stroke="#86efac"/>
+    <text x="1030" y="486" text-anchor="middle">Open MPI 4.1.8 (--with-tm)</text>
+    <rect x="800" y="506" width="360" height="30" rx="6" fill="#dcfce7" stroke="#86efac"/>
+    <text x="980" y="526" text-anchor="middle">Python 3.12 + mpi4py · Rust toolchain</text>
+  </g>
+
+  <!-- MPI between nodes -->
+  <line x1="664" y1="520" x2="776" y2="520" stroke="#b45309" stroke-width="2" marker-start="url(#arrMpi)" marker-end="url(#arrMpi)"/>
+  <text x="720" y="508" font-size="13" fill="#b45309" text-anchor="middle">MPI</text>
+  <text x="720" y="545" font-size="12" fill="#b45309" text-anchor="middle">ranks via TM</text>
+
+  <!-- storage -->
+  <rect x="260" y="590" width="920" height="46" rx="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+  <text x="280" y="619" font-size="15" font-weight="bold" fill="#713f12">/home</text>
+  <text x="340" y="619" font-size="14" fill="#713f12">named volume "pbs-home"  ·  shared home for pbsuser, job output via $usecp</text>
+
+  <rect x="260" y="652" width="920" height="46" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+  <text x="280" y="681" font-size="15" font-weight="bold" fill="#7c2d12">/shared</text>
+  <text x="352" y="681" font-size="14" fill="#7c2d12">bind mount of ./shared on the host  ·  file exchange with the host</text>
+
+  <text x="1170" y="583" font-size="12" fill="#64748b" text-anchor="end">mounted on all three containers</text>
+
+  <!-- host ./shared folder -->
+  <path d="M48,650 h34 l8,9 h48 v42 h-90 z" fill="#ffedd5" stroke="#ea580c" stroke-width="1.5"/>
+  <text x="93" y="722" font-size="14" font-weight="bold" fill="#7c2d12" text-anchor="middle">./shared</text>
+  <line x1="140" y1="678" x2="256" y2="676" stroke="#ea580c" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arr)"/>
+</svg>
