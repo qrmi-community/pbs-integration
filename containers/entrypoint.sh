@@ -73,14 +73,21 @@ if [ "$ROLE" = server ]; then
     install -d -o postgres -g postgres -m 775 /var/run/postgresql
 else
     # MOM configuration (overwritten because pbs_postinstall wrote the build-time hostname)
-    # $usecp: if the job output destination is under these paths, write it with cp
-    #         instead of rcp/ssh (both /shared and /home are shared by all nodes)
+    # $usecp:    if the job output destination is under these paths, write it with cp
+    #            instead of rcp/ssh (both /shared and /home are shared by all nodes)
+    # $logevent: log event classes written to mom_logs. 0xff leaves out class 0x0100,
+    #            in which pbs_mom logs the whole job environment ("env orig/env new")
+    #            when an execjob_launch hook changes it. That environment contains the
+    #            QRMI settings (API keys) and acquisition tokens added by qrmi_launch.
     mkdir -p "$PBS_HOME/mom_priv"
     cat > "$PBS_HOME/mom_priv/config" <<EOF
 \$clienthost $PBS_SERVER
 \$usecp *:/shared/ /shared/
 \$usecp *:/home/ /home/
+\$logevent 0xff
 EOF
+    # The logs may contain job information; readable by root only
+    chmod 700 "$PBS_HOME/mom_logs" 2>/dev/null || true
 fi
 
 # --- 3. Shutdown handler (stop PBS cleanly on podman stop) ---------------
