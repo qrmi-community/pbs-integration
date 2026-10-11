@@ -38,6 +38,7 @@ Five hooks handle the request at different points of the job life cycle:
 | `qrmi_launch` | `execjob_launch` | compute nodes | Adds the resource settings (endpoints, API keys) and the acquisition tokens to the environment of the job processes |
 | `qrmi_release` | `execjob_end` | first compute node of the job | Releases the acquired resources when the job ends or is deleted, and removes the token file |
 
+
 <p align="center">
   <img src="images/qrmi-hooks-overview.png" width="900">
 </p>
@@ -170,7 +171,6 @@ Copy the hook files into the shared directory on the host:
 
 ```bash
 mkdir -p shared/qrmi-hooks
-cp qrmi_*.PY install_qrmi_hooks.sh shared/qrmi-hooks/
 cp ../hooks/qrmi_*.PY ../hooks/install_qrmi_hooks.sh shared/qrmi-hooks/
 ```
 
@@ -517,6 +517,16 @@ The debug messages of `qrmi_acquire` and `qrmi_release` contain the acquisition 
 - **Classification of errors.** Only the QRMI exceptions listed in [Running QPU Jobs](#running-qpu-jobs) are treated as permanent. Other QRMI errors (subclasses of `qrmi.QrmiError`) are treated as temporary. Errors that are not QRMI errors are logged with a traceback as `unexpected error`; search `server_logs` and `mom_logs` for it after changing a hook or the configuration. The list of permanent errors is defined in `qrmi_validate.PY` and `qrmi_check.PY` (`QRMI_PERMANENT_ERRORS`). If the installed QRMI does not provide some of these classes, the hooks log `QRMI does not provide ...` and treat those errors as temporary.
 - **Submission time.** For QPU jobs, `qsub` takes a little longer because `qrmi_validate` checks the status of each requested resource.
 - **Check and acquisition are not atomic.** `qrmi_check` only checks the status; it does not reserve the resource. If another job takes the resource before `qrmi_acquire` runs on the compute node, the job is rejected there and retried, and the compute node it was sent to is left unused for that short time.
+- **Multi-node jobs.** The acquisition tokens exist only on the first node of the job (`qrmi_acquire` and `qrmi_release` run there). `qrmi_launch` also runs on the other nodes for tasks started through the PBS TM interface, and adds the resource settings there, but it cannot add the tokens. With Open MPI, `mpirun` passes its own environment, including the tokens, to all ranks, so every rank has both the settings and the tokens (checked with Open MPI 4.1 and TM). Processes started without `mpirun`, for example with `pbsdsh`, do not get the tokens on the other nodes (checked), and other MPI implementations may not pass them either. To check, run inside a job:
+
+  ```bash
+  mpirun sh -c 'echo "$(hostname): $(env | grep -c "^[^=]*_QRMI_JOB_ACQUISITION_TOKEN=") token(s)"'
+  pbsdsh -- sh -c 'echo "$(hostname): $(env | grep -c "^[^=]*_QRMI_JOB_ACQUISITION_TOKEN=") token(s)"'
+  ```
+
+  With `mpirun`, every node should print 1 token per resource. With `pbsdsh`, the other nodes print 0 (only the first node has the tokens).
+
+  If a process needs the tokens but does not get them, pass them explicitly (for example `mpirun -x <name>_QRMI_JOB_ACQUISITION_TOKEN`). Because `qrmi_launch` changes the job environment on every node of the job, keep `$logevent 0xff` on all compute nodes.
 - **Node failures.** If the job's first node or its `pbs_mom` stops while the job is running, `qrmi_release` cannot run there and the resources may remain acquired. The token file on that node shows what to release.
 - **Scheduling delay.** `qrmi_check` calls the QRMI status API for each resource inside the `pbs_server` process. Slow responses delay scheduling. Adjust `QRMI_ALARM` according to the actual response times.
 - **Concurrency counters.** The counter name is derived from the resource name (`qrmi_<name>`); keep `counter_resource()` in `qrmi_validate.PY` and `install_qrmi_hooks.sh` in sync. Counters of resources removed from `qrmi_config.json` are not deleted by the installation script; delete them with `qmgr -c "delete resource qrmi_<name>"` after removing them from `sched_config`. `quantum_resources` of a running job cannot be changed with `qalter`.
