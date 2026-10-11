@@ -1,0 +1,67 @@
+# OpenPBS: 1 server + 2 compute nodes
+# All three containers use the same image; the role is selected with PBS_ROLE
+
+x-pbs-common: &pbs-common
+  build:
+    context: .
+  image: localhost/openpbs:el9-py312-ompi   # same tag for all, so the 2nd and 3rd builds come from the cache
+  init: true                     # run an init as PID 1 to reap zombie processes
+  shm_size: 256m                 # for PostgreSQL and intra-node MPI communication (shared memory)
+  stop_grace_period: 60s         # time allowed to stop PBS on shutdown
+  volumes:
+    - ./shared:/shared:z         # directory shared with the host (for exchanging files)
+    - pbs-home:/home             # home shared by all three containers (like an NFS home)
+  extra_hosts:                   # resolve names (forward and reverse) via /etc/hosts instead of DNS
+    - "pbs-server:172.30.0.10"
+    - "pbs-node1:172.30.0.11"
+    - "pbs-node2:172.30.0.12"
+
+services:
+  pbs-server:
+    <<: *pbs-common
+    container_name: pbs-server
+    hostname: pbs-server         # fixed, because the hostname is recorded in the PBS datastore
+    environment:
+      PBS_ROLE: server
+      PBS_NODES: "pbs-node1 pbs-node2"
+    networks:
+      pbsnet:
+        ipv4_address: 172.30.0.10
+
+  pbs-node1:
+    <<: *pbs-common
+    container_name: pbs-node1
+    hostname: pbs-node1
+    environment:
+      PBS_ROLE: mom
+      PBS_SERVER_HOST: pbs-server
+    networks:
+      pbsnet:
+        ipv4_address: 172.30.0.11
+    depends_on:
+      - pbs-server
+
+  pbs-node2:
+    <<: *pbs-common
+    container_name: pbs-node2
+    hostname: pbs-node2
+    environment:
+      PBS_ROLE: mom
+      PBS_SERVER_HOST: pbs-server
+    networks:
+      pbsnet:
+        ipv4_address: 172.30.0.12
+    depends_on:
+      - pbs-server
+
+volumes:
+  # Named volume shared only within this compose project (created inside the Podman machine)
+  # On first mount, /home from the image (pbsuser's initial files and ownership) is copied into it
+  # Kept by `podman compose down`; removed with `podman compose down -v`
+  pbs-home:
+
+networks:
+  pbsnet:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

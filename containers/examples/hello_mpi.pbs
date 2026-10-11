@@ -1,0 +1,22 @@
+#!/bin/bash
+# Equivalent of: srun -N 2 -n 4 --mpi=pmix ./hello_mpi
+#   select=2            : 2 chunks (-N 2)
+#   ncpus=2:mpiprocs=2  : 2 cores and 2 MPI processes per chunk -> 4 processes in total (-n 4)
+#   place=scatter       : put each chunk on a different node
+#PBS -N hello_mpi
+#PBS -l select=2:ncpus=2:mpiprocs=2
+#PBS -l place=scatter
+#PBS -j oe
+# Create the output file with mode 644 (readable by everyone). PBS uses umask 077 by default,
+# and on /shared (bind mount from the host) files appear as owned by root, so pbsuser
+# could not read them otherwise.
+#PBS -W umask=022
+
+source /etc/profile.d/openmpi.sh
+cd "$PBS_O_WORKDIR"
+
+echo "=== PBS_NODEFILE ==="
+cat "$PBS_NODEFILE"
+
+echo "=== mpirun (launched via PBS TM; no -np or hostfile needed) ==="
+mpirun ./hello_mpi

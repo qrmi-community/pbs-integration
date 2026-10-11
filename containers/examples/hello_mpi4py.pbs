@@ -1,0 +1,15 @@
+#!/bin/bash
+# Runs mpi4py (Python 3.12) on 2 nodes with 4 processes in total
+#PBS -N hello_mpi4py
+#PBS -l select=2:ncpus=2:mpiprocs=2
+#PBS -l place=scatter
+#PBS -j oe
+# Create the output file with mode 644 (readable by everyone). PBS uses umask 077 by default,
+# and on /shared (bind mount from the host) files appear as owned by root, so pbsuser
+# could not read them otherwise.
+#PBS -W umask=022
+
+source /etc/profile.d/openmpi.sh
+cd "$PBS_O_WORKDIR"
+
+mpirun python3.12 hello_mpi4py.py
