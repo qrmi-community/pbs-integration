@@ -30,6 +30,34 @@ import json
 import traceback
 import pbs
 
+# Prefix of the log messages of this hook ("grep qrmi_acquire" in the PBS logs)
+HOOK_NAME = "qrmi_acquire"
+
+
+# Log levels used by the QRMI hooks:
+#   pbs.LOG_ERROR   -- the administrator must act: a bug, broken settings, a held
+#                      job, or quantum resources that may remain acquired
+#   pbs.LOG_WARNING -- a request was rejected, or the job is retried (once per event)
+#   LOG_TRACE       -- normal progress, and the reasons why a job waits (repeated at
+#                      every scheduling cycle while it waits)
+# pbs.LOG_ERROR, pbs.LOG_WARNING and pbs.LOG_DEBUG are all logged with event class
+# 0x0006 (always logged); they only differ in the syslog severity. LOG_TRACE uses
+# event class 0x0400 (pbs.EVENT_DEBUG3), which is not logged by default. To see it:
+#   server: qmgr -c "set server log_events = 1535"   (default 511)
+#   MOM:    $logevent 0x4ff in mom_priv/config, then SIGHUP pbs_mom
+#           (do not enable 0x0100: pbs_mom logs the job environment with it)
+LOG_TRACE = pbs.EVENT_DEBUG3
+
+# Job shown in the log messages (set after the event is read)
+LOG_JOB = None
+
+
+def log(level, msg):
+    """Writes a message to the PBS log (server_logs or mom_logs), prefixed with the
+    hook name and the job"""
+    prefix = f"{HOOK_NAME}: {LOG_JOB}: " if LOG_JOB else f"{HOOK_NAME}: "
+    pbs.logmsg(level, prefix + msg)
+
 # Directory where QRMI is installed for PBS hooks
 # (pip install --target /opt/pbs/python/site-packages "qrmi[ibm]")
 QRMI_SITE_PACKAGES = "/opt/pbs/python/site-packages"
@@ -100,16 +128,18 @@ def qrmi_base_errors(qrmi_module):
     base = getattr(qrmi_module, "QrmiError", None)
     if isinstance(base, type) and issubclass(base, BaseException):
         return (base,)
-    pbs.logmsg(pbs.LOG_WARNING, "qrmi.QrmiError not found; QRMI errors are logged as unexpected errors")
+    log(pbs.LOG_WARNING, "qrmi.QrmiError not found; QRMI errors are logged as unexpected errors")
     return ()
 
 
 def log_unexpected(context, err):
-    """Logs an unexpected (non-QRMI) error with its traceback, on one log line"""
+    """Logs an unexpected (non-QRMI) error with its traceback, on one log line.
+    context: e.g. the resource name, or None for the whole hook"""
     tb = traceback.format_exc().strip().replace("\n", " | ")
-    pbs.logmsg(
+    prefix = f"{context}: " if context else ""
+    log(
         pbs.LOG_ERROR,
-        f"{context}: unexpected error (possibly a bug in the hook or invalid settings): "
+        f"{prefix}unexpected error (possibly a bug in the hook or invalid settings): "
         f"{type(err).__name__}: {err} | {tb}",
     )
 
@@ -123,13 +153,14 @@ def release_acquired(acquired):
     for name, resource, token in acquired:
         try:
             resource.release(token)
-            pbs.logmsg(pbs.LOG_WARNING, f"{name} released because the job was rejected")
+            log(pbs.LOG_WARNING, f"{name} released because the job was rejected")
         except Exception as err:
-            pbs.logmsg(pbs.LOG_ERROR, f"Failed to release {name} (token {token}): {err}")
+            log(pbs.LOG_ERROR, f"Failed to release {name} (token {token}): {err}")
 
 
 e = pbs.event()
 j = e.job
+LOG_JOB = j.id
 
 # Resources acquired in this hook run: (name, QuantumResource, token).
 # Defined before "try" so that they can be released on any error.
@@ -186,7 +217,7 @@ try:
     failures = []
     for name, type_name in pairs:
         if name in already:
-            pbs.logmsg(pbs.LOG_DEBUG, f"{name} is already acquired for this job")
+            log(LOG_TRACE, f"{name} is already acquired for this job")
             continue
 
         res_type = RES_TYPE_MAP.get(type_name)
@@ -203,17 +234,17 @@ try:
             # this hook is interrupted (e.g. by its alarm)
             state["resources"].append({"name": name, "type": type_name, "token": token})
             save_state(path, state)
-            pbs.logmsg(pbs.LOG_DEBUG, f"{name}, {type_name} acquired: {token}")
+            log(LOG_TRACE, f"{name}, {type_name} acquired: {token}")
 
         except qrmi_errors as err:
             # QRMI error, e.g. the resource was taken by another job after
             # qrmi_check confirmed that it was available
-            pbs.logmsg(pbs.LOG_WARNING, f"{name}: QRMI error at acquisition ({type(err).__name__}: {err})")
+            log(pbs.LOG_WARNING, f"{name}: QRMI error at acquisition ({type(err).__name__}: {err})")
             failures.append(f"{name}: {type(err).__name__}: {err}")
 
         except Exception as err:
             # Not a QRMI error: probably a bug or invalid settings
-            log_unexpected(f"{name}: qrmi_acquire", err)
+            log_unexpected(name, err)
             failures.append(f"{name}: unexpected error ({type(err).__name__})")
 
     if failures:
@@ -226,9 +257,11 @@ try:
 
 except Exception as err:
     if isinstance(err, AcquireFailed):
-        pbs.logmsg(pbs.LOG_ERROR, f"qrmi_acquire failed: {err}")
+        # The job goes back to the queue and is retried. Unexpected errors among
+        # the failures have been logged above as errors.
+        log(pbs.LOG_WARNING, f"failed: {err}")
     else:
-        log_unexpected("qrmi_acquire", err)
+        log_unexpected(None, err)
     release_acquired(acquired)
     # Remove the released resources from the saved state
     if path is not None and state is not None and acquired:
@@ -240,5 +273,5 @@ except Exception as err:
             elif os.path.exists(path):
                 os.remove(path)
         except Exception as save_err:
-            pbs.logmsg(pbs.LOG_ERROR, f"Failed to update {path}: {save_err}")
+            log(pbs.LOG_ERROR, f"Failed to update {path}: {save_err}")
     e.reject(str(err))

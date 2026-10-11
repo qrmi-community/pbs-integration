@@ -32,6 +32,34 @@ import json
 import traceback
 import pbs
 
+# Prefix of the log messages of this hook ("grep qrmi_validate" in the PBS logs)
+HOOK_NAME = "qrmi_validate"
+
+
+# Log levels used by the QRMI hooks:
+#   pbs.LOG_ERROR   -- the administrator must act: a bug, broken settings, a held
+#                      job, or quantum resources that may remain acquired
+#   pbs.LOG_WARNING -- a request was rejected, or the job is retried (once per event)
+#   LOG_TRACE       -- normal progress, and the reasons why a job waits (repeated at
+#                      every scheduling cycle while it waits)
+# pbs.LOG_ERROR, pbs.LOG_WARNING and pbs.LOG_DEBUG are all logged with event class
+# 0x0006 (always logged); they only differ in the syslog severity. LOG_TRACE uses
+# event class 0x0400 (pbs.EVENT_DEBUG3), which is not logged by default. To see it:
+#   server: qmgr -c "set server log_events = 1535"   (default 511)
+#   MOM:    $logevent 0x4ff in mom_priv/config, then SIGHUP pbs_mom
+#           (do not enable 0x0100: pbs_mom logs the job environment with it)
+LOG_TRACE = pbs.EVENT_DEBUG3
+
+# Job shown in the log messages (set after the event is read)
+LOG_JOB = None
+
+
+def log(level, msg):
+    """Writes a message to the PBS log (server_logs or mom_logs), prefixed with the
+    hook name and the job"""
+    prefix = f"{HOOK_NAME}: {LOG_JOB}: " if LOG_JOB else f"{HOOK_NAME}: "
+    pbs.logmsg(level, prefix + msg)
+
 # Directory where QRMI is installed for PBS hooks
 # (pip install --target /opt/pbs/python/site-packages "qrmi[ibm]")
 QRMI_SITE_PACKAGES = "/opt/pbs/python/site-packages"
@@ -119,22 +147,17 @@ def warn_capacity_mismatch(name, status, server):
         limit = get_res_value(server.resources_available, res_name)
         if limit is None:
             return
-        capacity = getattr(status, "capacity", None)
-        if capacity is None:
-            max_slots = 1
-        elif isinstance(capacity, dict):
-            max_slots = capacity.get("max_slots")
-        else:
-            max_slots = getattr(capacity, "max_slots", None)
+        capacity = status.capacity  # ResourceCapacity, or None (no slots)
+        max_slots = 1 if capacity is None else capacity.max_slots
         if max_slots is not None and int(limit) not in (0, int(max_slots)):
-            pbs.logmsg(
+            log(
                 pbs.LOG_WARNING,
                 f"{name}: server resources_available.{res_name} = {int(limit)}, but QRMI reports "
                 f"max_slots = {int(max_slots)}{' (no capacity)' if capacity is None else ''}. "
                 f"Set it with: qmgr -c \"set server resources_available.{res_name} = {int(max_slots)}\"",
             )
     except Exception as err:
-        pbs.logmsg(pbs.LOG_WARNING, f"{name}: cannot compare the capacity: {err}")
+        log(pbs.LOG_WARNING, f"{name}: cannot compare the capacity: {err}")
 
 
 def get_pbs_home():
@@ -189,7 +212,7 @@ def qrmi_error_classes(qrmi_module):
         else:
             missing.append(class_name)
     if missing:
-        pbs.logmsg(
+        log(
             pbs.LOG_WARNING,
             f"QRMI does not provide {', '.join(missing)}; these errors are treated as temporary",
         )
@@ -198,17 +221,21 @@ def qrmi_error_classes(qrmi_module):
 
 
 def log_unexpected(context, err):
-    """Logs an unexpected (non-QRMI) error with its traceback, on one log line"""
+    """Logs an unexpected (non-QRMI) error with its traceback, on one log line.
+    context: e.g. the resource name, or None for the whole hook"""
     tb = traceback.format_exc().strip().replace("\n", " | ")
-    pbs.logmsg(
+    prefix = f"{context}: " if context else ""
+    log(
         pbs.LOG_ERROR,
-        f"{context}: unexpected error (possibly a bug in the hook or invalid settings): "
+        f"{prefix}unexpected error (possibly a bug in the hook or invalid settings): "
         f"{type(err).__name__}: {err} | {tb}",
     )
 
 
 e = pbs.event()
 job = e.job
+# For the log messages: the job id is not assigned yet at qsub (queuejob)
+LOG_JOB = job.id if job.id else f"new job by {getattr(e, 'requestor', None) or 'unknown user'}"
 
 try:
     resources = get_pbs_res("quantum_resources", job)
@@ -223,7 +250,7 @@ try:
         if resources is None:
             # Not a QPU request: nothing to check
             e.accept()
-        pbs.logmsg(pbs.LOG_ERROR, f"Cannot read {cfg_path}: {err}")
+        log(pbs.LOG_ERROR, f"Cannot read {cfg_path}: {err}")
         e.reject(
             "Quantum resources are not available: the QRMI configuration cannot be read. "
             "Contact the administrator."
@@ -285,7 +312,7 @@ try:
             f"Invalid quantum_resources: {'; '.join(errors)}. "
             f"Available quantum resources: {available}"
         )
-        pbs.logmsg(pbs.LOG_WARNING, f"{job.id if job.id else 'new job'}: {msg}")
+        log(pbs.LOG_WARNING, msg)
         e.reject(msg)
 
     # Check the requested slots against the limit set by the
@@ -296,7 +323,7 @@ try:
         res_name = counter_resource(name)
         limit = get_res_value(server.resources_available, res_name)
         if limit is None:
-            pbs.logmsg(
+            log(
                 pbs.LOG_ERROR,
                 f"{name}: server resources_available.{res_name} is not set. "
                 "Run install_qrmi_hooks.sh again.",
@@ -309,7 +336,7 @@ try:
             )
     if errors:
         msg = f"Invalid quantum_resources: {'; '.join(errors)}. Contact the administrator if needed."
-        pbs.logmsg(pbs.LOG_WARNING, f"{job.id if job.id else 'new job'}: {msg}")
+        log(pbs.LOG_WARNING, msg)
         e.reject(msg)
 
     # Check each resource with QRMI, to reject errors that do not go away by
@@ -320,7 +347,7 @@ try:
         import qrmi
         from qrmi import QuantumResource, ResourceType
     except Exception as err:
-        pbs.logmsg(pbs.LOG_ERROR, f"Cannot import QRMI: {err}")
+        log(pbs.LOG_ERROR, f"Cannot import QRMI: {err}")
         e.reject(
             "Quantum resources are not available: QRMI cannot be loaded on the PBS server. "
             "Contact the administrator."
@@ -348,12 +375,12 @@ try:
         except permanent_errors as err:
             # The details go to the server log only; they may contain settings
             reason = QRMI_PERMANENT_ERRORS.get(type(err).__name__, type(err).__name__)
-            pbs.logmsg(pbs.LOG_ERROR, f"{name}: {type(err).__name__}: {err}")
+            log(pbs.LOG_ERROR, f"{name}: {type(err).__name__}: {err}")
             errors.append(f"'{name}': {reason}")
         except qrmi_errors as err:
             # Temporary QRMI errors (e.g. network errors) do not reject the job;
             # qrmi_check checks the resource again before the job runs.
-            pbs.logmsg(
+            log(
                 pbs.LOG_WARNING,
                 f"{name}: temporary QRMI error at submission ({type(err).__name__}: {err}); "
                 "it is checked again before the job runs",
@@ -361,14 +388,14 @@ try:
         except Exception as err:
             # Not a QRMI error: probably a bug or invalid settings. The job is not
             # rejected (it is checked again before it runs), but the error is logged.
-            log_unexpected(f"{name}: qrmi_validate", err)
+            log_unexpected(name, err)
 
     if errors:
         msg = (
             f"Quantum resources cannot be used: {'; '.join(errors)}. "
             "Check your settings (qsub -v) or contact the administrator."
         )
-        pbs.logmsg(pbs.LOG_WARNING, f"{job.id if job.id else 'new job'}: {msg}")
+        log(pbs.LOG_WARNING, msg)
         e.reject(msg)
 
     # Request the slots from the PBS scheduler. Counters of
@@ -379,8 +406,11 @@ try:
     for name, count in requested.items():
         job.Resource_List[counter_resource(name)] = count
 
+    counters = ", ".join(f"{counter_resource(n)}={c}" for n, c in requested.items())
+    log(LOG_TRACE, f"accepted quantum_resources={resources} ({counters})")
+
     e.accept()
 
 except Exception as err:
-    log_unexpected("qrmi_validate", err)
+    log_unexpected(None, err)
     e.reject(f"Failed to validate quantum_resources: {err}")

@@ -29,6 +29,34 @@ import json
 import traceback
 import pbs
 
+# Prefix of the log messages of this hook ("grep qrmi_check" in the PBS logs)
+HOOK_NAME = "qrmi_check"
+
+
+# Log levels used by the QRMI hooks:
+#   pbs.LOG_ERROR   -- the administrator must act: a bug, broken settings, a held
+#                      job, or quantum resources that may remain acquired
+#   pbs.LOG_WARNING -- a request was rejected, or the job is retried (once per event)
+#   LOG_TRACE       -- normal progress, and the reasons why a job waits (repeated at
+#                      every scheduling cycle while it waits)
+# pbs.LOG_ERROR, pbs.LOG_WARNING and pbs.LOG_DEBUG are all logged with event class
+# 0x0006 (always logged); they only differ in the syslog severity. LOG_TRACE uses
+# event class 0x0400 (pbs.EVENT_DEBUG3), which is not logged by default. To see it:
+#   server: qmgr -c "set server log_events = 1535"   (default 511)
+#   MOM:    $logevent 0x4ff in mom_priv/config, then SIGHUP pbs_mom
+#           (do not enable 0x0100: pbs_mom logs the job environment with it)
+LOG_TRACE = pbs.EVENT_DEBUG3
+
+# Job shown in the log messages (set after the event is read)
+LOG_JOB = None
+
+
+def log(level, msg):
+    """Writes a message to the PBS log (server_logs or mom_logs), prefixed with the
+    hook name and the job"""
+    prefix = f"{HOOK_NAME}: {LOG_JOB}: " if LOG_JOB else f"{HOOK_NAME}: "
+    pbs.logmsg(level, prefix + msg)
+
 # Directory where QRMI is installed for PBS hooks
 # (pip install --target /opt/pbs/python/site-packages "qrmi[ibm]")
 QRMI_SITE_PACKAGES = "/opt/pbs/python/site-packages"
@@ -79,15 +107,6 @@ def get_pbs_res(res_name, pbs_job, default_value=None):
             return value
 
     return default_value
-
-
-def get_field(obj, key):
-    """Returns obj.key or obj[key], or None"""
-    if obj is None:
-        return None
-    if isinstance(obj, dict):
-        return obj.get(key)
-    return getattr(obj, key, None)
 
 
 def parse_quantum_resources(value):
@@ -143,7 +162,7 @@ def qrmi_error_classes(qrmi_module):
         else:
             missing.append(class_name)
     if missing:
-        pbs.logmsg(
+        log(
             pbs.LOG_WARNING,
             f"QRMI does not provide {', '.join(missing)}; these errors are treated as temporary",
         )
@@ -152,17 +171,20 @@ def qrmi_error_classes(qrmi_module):
 
 
 def log_unexpected(context, err):
-    """Logs an unexpected (non-QRMI) error with its traceback, on one log line"""
+    """Logs an unexpected (non-QRMI) error with its traceback, on one log line.
+    context: e.g. the resource name, or None for the whole hook"""
     tb = traceback.format_exc().strip().replace("\n", " | ")
-    pbs.logmsg(
+    prefix = f"{context}: " if context else ""
+    log(
         pbs.LOG_ERROR,
-        f"{context}: unexpected error (possibly a bug in the hook or invalid settings): "
+        f"{prefix}unexpected error (possibly a bug in the hook or invalid settings): "
         f"{type(err).__name__}: {err} | {tb}",
     )
 
 
 e = pbs.event()
 job = e.job
+LOG_JOB = job.id
 
 try:
     resources = get_pbs_res("quantum_resources", job)
@@ -204,6 +226,9 @@ try:
     res_types = []
     # Resources with errors that do not go away by waiting: "<name>: <reason>"
     permanent_failures = []
+    # Why the job waits, per resource: {name: reason}. Shown in the job comment
+    # (qstat -f), so that the reason is visible without enabling debug logs.
+    wait_reasons = {}
 
     # {name: slots} ("ibm_kingston:2" -> {"ibm_kingston": 2}). Duplicates are
     # merged, keeping the order.
@@ -212,94 +237,107 @@ try:
     for name in qrmi_qpu_names:
         cfg = cfg_by_name.get(name)
         if cfg is None:
-            pbs.logmsg(pbs.LOG_ERROR, f"{name} not found in qrmi_config.json. Ignored.")
+            # qrmi_config.json was changed after submission: waiting does not help
+            log(pbs.LOG_ERROR, f"{name} not found in qrmi_config.json.")
+            permanent_failures.append(f"{name}: not defined in the QRMI configuration")
             continue
 
         res_type = RES_TYPE_MAP.get(cfg.get("type"))
         if res_type is None:
-            pbs.logmsg(
+            log(
                 pbs.LOG_ERROR,
-                f"{name}: unknown resource type '{cfg.get('type')}' in qrmi_config.json. Ignored.",
+                f"{name}: unknown resource type '{cfg.get('type')}' in qrmi_config.json.",
             )
+            permanent_failures.append(f"{name}: unknown resource type '{cfg.get('type')}'")
             continue
 
         # The settings (e.g. API keys) are passed to QRMI only. They are NOT written to
         # the job attributes (Variable_List), which users can see with "qstat -f".
         qrmi_config = build_qrmi_config(name, cfg, job.Variable_List)
         for key, value in qrmi_config.items():
-            pbs.logmsg(pbs.LOG_DEBUG, f"{name}_{key} = {masked(key, value)}")
+            log(LOG_TRACE, f"{name}_{key} = {masked(key, value)}")
 
         try:
             qrmi = QuantumResource.from_config(name, res_type, qrmi_config)
-            pbs.logmsg(
-                pbs.LOG_DEBUG,
+            log(
+                LOG_TRACE,
                 f"resource_type = {qrmi.resource_type()}, resource_id={qrmi.resource_id()}",
             )
             status = qrmi.status()
-            pbs.logmsg(pbs.LOG_DEBUG, f"status = {json.dumps(status.to_dict(), indent=2)}")
-            # Optional fields: resource types that do not support them return None.
+            log(LOG_TRACE, f"status = {json.dumps(status.to_dict(), indent=2)}")
+            # ResourceStatus (QRMI >= 0.26.0): status_reason, healthy, busy and
+            # capacity are None for resource types that do not support them.
             # status_reason, if reported, is added to the log messages below.
-            reason = getattr(status, "status_reason", None)
+            reason = status.status_reason
             reason_txt = f" (reason: {reason})" if reason is not None else ""
 
             if status.status != ResourceStatusCode.Online:
                 # The quantum resource cannot accept jobs due to maintenance,
                 # calibration, or other operational activities.
-                pbs.logmsg(pbs.LOG_ERROR, f"{name} is unaccessible{reason_txt}. Ignored.")
+                log(LOG_TRACE, f"{name} is unaccessible{reason_txt}. The job waits in the queue.")
+                wait_reasons[name] = f"not online{reason_txt}"
                 continue
 
             # Online but reported as not healthy: wait. None (not supported) is ignored.
-            if getattr(status, "healthy", None) is False:
-                pbs.logmsg(pbs.LOG_ERROR, f"{name} is not healthy{reason_txt}. Ignored.")
+            if status.healthy is False:
+                log(LOG_TRACE, f"{name} is not healthy{reason_txt}. The job waits in the queue.")
+                wait_reasons[name] = f"not healthy{reason_txt}"
                 continue
 
-            # Some resource types do not report "busy" (None, or no attribute at all).
-            # In that case only the checks above are used.
-            if getattr(status, "busy", None) is True:
+            # Busy: wait. None (not supported) is ignored.
+            if status.busy is True:
                 # The quantum resource is online but currently busy.
-                pbs.logmsg(pbs.LOG_ERROR, f"{name} is busy{reason_txt}. Ignored.")
+                log(LOG_TRACE, f"{name} is busy{reason_txt}. The job waits in the queue.")
+                wait_reasons[name] = f"busy{reason_txt}"
                 continue
 
             # Resources that report their capacity: the job needs at least the
             # requested number of free slots. The slots may also be used by users
             # outside PBS, so this is checked here, with the current status.
             slots = requested[name]
-            capacity = getattr(status, "capacity", None)
+            capacity = status.capacity  # ResourceCapacity, or None (no slots)
             if capacity is not None:
-                available = get_field(capacity, "available_slots")
+                available = capacity.available_slots
                 if available is not None and int(available) < slots:
-                    pbs.logmsg(
-                        pbs.LOG_ERROR,
-                        f"{name}: {slots} slots requested, {available} available{reason_txt}. Ignored.",
+                    log(
+                        LOG_TRACE,
+                        f"{name}: {slots} slots requested, {available} available{reason_txt}. The job waits in the queue.",
                     )
+                    wait_reasons[name] = f"{slots} slots requested, {available} available{reason_txt}"
                     continue
 
-            pbs.logmsg(pbs.LOG_DEBUG, f"{name} is accessible")
+            log(LOG_TRACE, f"{name} is accessible")
             res_names.append(name)
             res_types.append(cfg["type"])
 
         except permanent_errors as err:
             reason = QRMI_PERMANENT_ERRORS.get(type(err).__name__, type(err).__name__)
-            pbs.logmsg(pbs.LOG_ERROR, f"{name}: {type(err).__name__}: {err}")
+            log(pbs.LOG_ERROR, f"{name}: {type(err).__name__}: {err}")
             permanent_failures.append(f"{name}: {reason}")
 
         except qrmi_errors as err:
-            # Temporary QRMI error (e.g. network): the job waits in the queue
-            pbs.logmsg(
-                pbs.LOG_WARNING,
+            # Temporary QRMI error (e.g. network): the job waits in the queue. Logged
+            # at every scheduling cycle while it lasts, so as a debug message. The
+            # error text may contain settings; only its type goes to the comment.
+            log(
+                LOG_TRACE,
                 f"{name}: temporary QRMI error ({type(err).__name__}: {err}); the job is retried later",
             )
+            wait_reasons[name] = f"temporary QRMI error ({type(err).__name__})"
 
         except Exception as err:
             # Not a QRMI error: probably a bug or invalid settings. The job waits in
             # the queue, so that it runs automatically once the problem is fixed.
-            log_unexpected(f"{name}: qrmi_check", err)
+            log_unexpected(name, err)
+            wait_reasons[name] = "unexpected error (see server_logs)"
 
     # A rejected runjob puts the job back in the queue and the scheduler retries it,
     # so the job waits (without using compute nodes) until the resources become
-    # available. Requests that can never succeed (unknown names or types) are
-    # rejected at submission time by the qrmi_validate (queuejob/modifyjob) hook;
-    # they reach this point only if qrmi_config.json was changed after submission.
+    # available. Requests that can never succeed are rejected at submission time by
+    # the qrmi_validate (queuejob/modifyjob) hook. They reach this point only if
+    # something changed after submission (qrmi_config.json edited, credentials
+    # revoked). A runjob hook cannot end a job, so such jobs are held instead of
+    # being retried forever.
     if permanent_failures:
         # Waiting does not help: hold the job instead of retrying it forever.
         job.Hold_Types = pbs.hold_types("s")
@@ -307,13 +345,16 @@ try:
             f"Held: quantum resources cannot be used ({'; '.join(permanent_failures)}). "
             f"After fixing the problem, release the job with 'qrls -h s {job.id}'."
         )
-        pbs.logmsg(pbs.LOG_ERROR, ERR_TXT)
+        log(pbs.LOG_ERROR, ERR_TXT)
         e.reject(ERR_TXT)
 
     missing = [n for n in qrmi_qpu_names if n not in res_names]
     if missing:
-        ERR_TXT = f"Specified quantum resources({missing}) are unavailable."
-        pbs.logmsg(pbs.LOG_ERROR, ERR_TXT)
+        # The reject message becomes the job comment (qstat -f)
+        ERR_TXT = "Waiting for quantum resources: " + "; ".join(
+            f"{n}: {wait_reasons.get(n, 'unavailable')}" for n in missing
+        )
+        log(LOG_TRACE, ERR_TXT)
         e.reject(ERR_TXT)
 
     # Information for the hooks on the execution hosts and for the job (no secrets)
@@ -327,11 +368,11 @@ try:
     job.Variable_List["QRMI_JOB_QPU_TYPES"] = QRMI_LIST_DELIMITER.join(res_types)
     job.Variable_List["QRMI_LIST_DELIMITER"] = QRMI_LIST_DELIMITER
 
-    pbs.logmsg(pbs.LOG_DEBUG, job.Variable_List["QRMI_JOB_QPU_RESOURCES"])
-    pbs.logmsg(pbs.LOG_DEBUG, job.Variable_List["QRMI_JOB_QPU_TYPES"])
+    log(LOG_TRACE, job.Variable_List["QRMI_JOB_QPU_RESOURCES"])
+    log(LOG_TRACE, job.Variable_List["QRMI_JOB_QPU_TYPES"])
 
     e.accept()
 
 except Exception as err:
-    log_unexpected("qrmi_check", err)
+    log_unexpected(None, err)
     e.reject(str(err))

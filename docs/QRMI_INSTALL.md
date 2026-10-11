@@ -16,6 +16,7 @@ This document describes how to install QRMI and the PBS hooks that manage quantu
   - [Using your own credentials](#using-your-own-credentials)
 - [Updating and Uninstalling](#updating-and-uninstalling)
 - [Troubleshooting](#troubleshooting)
+  - [Log levels](#log-levels)
 - [Notes and Limitations](#notes-and-limitations)
 
 ## Overview
@@ -64,6 +65,7 @@ The files used in this document:
 ## Prerequisites
 
 - The OpenPBS cluster from [INSTALL.md](INSTALL.md) is running (`pbs-server`, `pbs-node1`, `pbs-node2`), with OpenPBS using the embedded Python 3.12.
+- QRMI 0.26.0 or later (the hooks use `status_reason`, `healthy`, `busy` and `capacity` of `ResourceStatus`).
 - Credentials for the quantum resources you want to use (for example an IBM Quantum API key and service CRN).
 - The compute nodes do not log log event class `0x0100` (see the warning below). The `entrypoint.sh` of the cluster containers sets `$logevent 0xff` in `mom_priv/config` and makes `mom_logs` readable by `root` only.
 
@@ -89,7 +91,7 @@ Install it into `/opt/pbs/python/site-packages`, the directory that the hooks ad
 
 ```bash
 for c in pbs-server pbs-node1 pbs-node2; do
-  docker exec $c python3.12 -m pip install --target /opt/pbs/python/site-packages "qrmi[ibm]"
+  docker exec $c python3.12 -m pip install --target /opt/pbs/python/site-packages "qrmi[ibm]>=0.26.0"
 done
 ```
 
@@ -169,7 +171,6 @@ Copy the hook files into the shared directory on the host:
 
 ```bash
 mkdir -p shared/qrmi-hooks
-cp qrmi_*.PY install_qrmi_hooks.sh shared/qrmi-hooks/
 cp ../hooks/qrmi_*.PY ../hooks/install_qrmi_hooks.sh shared/qrmi-hooks/
 ```
 
@@ -296,7 +297,7 @@ docker exec pbs-server bash -lc 'grep -iE "qrmi|ibm_kingston" /var/spool/pbs/ser
 docker exec pbs-node1  bash -lc 'grep -iE "qrmi|ibm_kingston" /var/spool/pbs/mom_logs/$(date -u +%Y%m%d) | tail'
 ```
 
-> Messages logged at `LOG_DEBUG` (for example "acquired" and "released") may not appear with the default log level. Set `debug = true` on a hook (`qmgr -c "set hook qrmi_acquire debug = true"`) or raise the log level if you need them.
+> Normal progress messages (for example "acquired" and "released") are debug messages and are not logged by default. See [Log levels](#log-levels) to enable them.
 
 For a job on two nodes (`-l select=2:ncpus=1 -l place=scatter`), `qrmi_acquire` and `qrmi_release` should run only once each, on the first node of the job.
 
@@ -313,7 +314,7 @@ How the hooks handle errors from QRMI:
 | Not enough free slots in the counter (other PBS jobs are using the resource) | scheduler | Job waits in the queue (`Q`) and starts automatically when running jobs end; `qrmi_check` is not called meanwhile |
 | Not enough `available_slots` reported by QRMI (e.g. used outside PBS) | before the job runs | Job waits in the queue (`Q`) and is retried |
 | `qrmi.AuthenticationFailedError`, `qrmi.ResourceNotFoundError`, `qrmi.InvalidInputError`, `qrmi.UnsupportedResourceTypeError`, `qrmi.ConfigError` | `qsub` / `qalter` | Rejected immediately |
-| The same errors, after the job was submitted (e.g. the credentials were revoked) | before the job runs | Job is held (`H`, system hold); the comment shows the reason |
+| The same errors, or a resource removed from `qrmi_config.json`, after the job was submitted (e.g. the credentials were revoked) | before the job runs | Job is held (`H`, system hold); the comment shows the reason |
 | Resource offline, not healthy (`healthy = False`), busy, other QRMI errors (`qrmi.QrmiError`, e.g. network errors) | before the job runs | Job waits in the queue (`Q`) and is retried; logged as a warning |
 | Errors that are not QRMI errors (e.g. a bug in a hook or invalid settings) | any hook | Job waits in the queue (`Q`) and runs once the problem is fixed; logged as an error with a traceback (`unexpected error`) |
 | Resource taken by another job between the check and the acquisition | first compute node | Job goes back to the queue and is retried |
@@ -429,6 +430,13 @@ docker exec pbs-server bash -lc 'for h in qrmi_validate qrmi_check qrmi_acquire 
 
 ## Troubleshooting
 
+Every log message of the hooks starts with the hook name and the job: `qrmi_check: 12.pbs-server: ibm_kingston is busy. The job waits in the queue.` At submission the job id is not assigned yet, so `qrmi_validate` shows the user instead (`qrmi_validate: new job by pbsuser: ...`). Search by hook name or job id (the log file names are dates in UTC):
+
+```bash
+docker exec pbs-server bash -lc 'grep -E "qrmi_(validate|check):" /var/spool/pbs/server_logs/$(date -u +%Y%m%d) | tail -20'
+docker exec pbs-node1  bash -lc 'grep -E "qrmi_(acquire|launch|release): <job-id>" /var/spool/pbs/mom_logs/$(date -u +%Y%m%d)'
+```
+
 **Every job, including jobs without `quantum_resources`, stays in the queue.** This happens with hooks that import QRMI before checking the job (for example older versions of these hooks). With the current hooks, only QPU jobs are affected. Check `server_logs` for `runjob hook 'qrmi_check' encountered an exception` or `rejected`.
 
 **`ModuleNotFoundError: No module named 'qrmi'` in `server_logs`.**
@@ -436,7 +444,12 @@ docker exec pbs-server bash -lc 'for h in qrmi_validate qrmi_check qrmi_acquire 
 1. Check that QRMI is in `/opt/pbs/python/site-packages` on `pbs-server` ([step 1](#1-installing-qrmi)).
 2. Restart the server (`docker compose restart pbs-server`). If the hook tried to import QRMI before it was installed, the long-lived `pbs_server` process may remember that the directory did not exist until it is restarted.
 
-**A QPU job stays in the queue (`Q`).** One of the requested resources is unavailable. `server_logs` shows the reason for each resource: `is unaccessible` (not online, e.g. maintenance), `is not healthy`, `is busy`, `<N> slots requested, <M> available`, or `Failed to process request in QRMI`. If the resource reports `status_reason`, it is appended to the message (`(reason: ...)`). The job starts automatically when the resource becomes available. Search the log case-insensitively (`grep -iE "qrmi|<resource name>"`), because some messages contain `QRMI` in upper case and others only the resource name.
+**A QPU job stays in the queue (`Q`).** Check the job comment (`qstat -f <job-id> | grep comment`):
+
+- `Insufficient amount of server resource: qrmi_<name>`: all slots of the counter are used by other PBS jobs (see below).
+- `Waiting for quantum resources: <name>: <reason>`: `qrmi_check` found the resource unavailable. The reason is `not online`, `not healthy`, `busy`, `<N> slots requested, <M> available`, `temporary QRMI error (<type>)`, or `unexpected error (see server_logs)`. If the resource reports `status_reason`, it is appended (`(reason: ...)`).
+
+The job starts automatically when the resource becomes available. For details, enable the debug messages (see [Log levels](#log-levels)); `unexpected error` is always logged.
 
 **`unexpected error` in the logs.** A hook hit an error that is not a QRMI error, probably a bug in the hook or invalid settings (for example a malformed `qrmi_config.json`). The log line contains the traceback. The affected jobs wait in the queue; after fixing the problem (and importing the fixed hook), they run automatically.
 
@@ -460,16 +473,60 @@ qrls -h s <job-id>
 
 **`qsub` reports `Unknown resource: quantum_resources`.** The custom resource has not been created. Run the installation script again.
 
-**Hook input and output for debugging.** With `debug = true` on a hook, PBS keeps the hook's input and output in `/var/spool/pbs/server_priv/hooks/tmp/` (server hooks) or `/var/spool/pbs/mom_priv/hooks/tmp/` (compute node hooks).
+**Hook input and output for debugging.** With `debug = true` on a hook, PBS keeps the hook's input and output in `/var/spool/pbs/server_priv/hooks/tmp/` (server hooks) or `/var/spool/pbs/mom_priv/hooks/tmp/` (compute node hooks). These files contain the job attributes and environment, including API keys and acquisition tokens; set `debug = false` and delete them when you are done.
+
+### Log levels
+
+| Level | Used for | Logged by default |
+|-------|----------|-------------------|
+| `pbs.LOG_ERROR` | The administrator must act: a bug or broken settings (`unexpected error`), permanent QRMI errors, held jobs, resources that may remain acquired (the token is logged) | Yes |
+| `pbs.LOG_WARNING` | A request was rejected, or a job is retried (logged once per event) | Yes |
+| Debug (`pbs.EVENT_DEBUG3`, event class `0x0400`) | Normal progress (`accepted ...`, `acquired`, `released`), and why a job waits (`is busy`, `is not healthy`, `<N> slots requested, <M> available`, temporary QRMI errors). The reasons for waiting are logged at every scheduling cycle while the job waits | No |
+
+`pbs.LOG_ERROR`, `pbs.LOG_WARNING` and `pbs.LOG_DEBUG` are all written with event class `0x0006`, so they are always logged; they only differ in the syslog severity. The hooks therefore use event class `0x0400` for debug messages, which is not in the default event masks of the server (`log_events = 511`) and of the compute nodes (`$logevent 0xff`).
+
+The reasons why a job waits are also shown in the job comment, so they can be checked without enabling debug messages:
+
+```bash
+qstat -f <job-id> | grep comment
+#    comment = Waiting for quantum resources: ibm_kingston: 2 slots requested, 1 available
+```
+
+To enable debug messages temporarily on the server (`qrmi_validate`, `qrmi_check`):
+
+```bash
+docker exec pbs-server bash -lc 'qmgr -c "set server log_events = 1535"'   # 511 + 0x400
+docker exec pbs-server bash -lc 'qmgr -c "set server log_events = 511"'    # back to the default
+```
+
+On a compute node (`qrmi_acquire`, `qrmi_launch`, `qrmi_release`), change `$logevent` in `mom_priv/config` to `0x4ff` and send `SIGHUP` to `pbs_mom`; set it back to `0xff` afterwards:
+
+```bash
+docker exec pbs-node1 bash -c 'sed -i "s/^\$logevent .*/\$logevent 0x4ff/" /var/spool/pbs/mom_priv/config && pkill -HUP -x pbs_mom'
+```
+
+> **Do not enable event class `0x0100` on the compute nodes** (for example `$logevent 0x1ff` or `0x5ff`). With it, `pbs_mom` logs the whole job environment, including API keys and acquisition tokens (see [Prerequisites](#prerequisites)).
+
+The debug messages of `qrmi_acquire` and `qrmi_release` contain the acquisition tokens. `mom_logs` is readable by `root` only.
 
 ## Notes and Limitations
 
 - **pbs_mom logs the job environment.** `pbs_mom` writes the job environment changed by `execjob_launch` hooks to `mom_logs` with log event class `0x0100`, including the QRMI settings and tokens. Keep that class disabled on the compute nodes (`$logevent 0xff`), and keep `mom_logs` readable by `root` only.
 - **Users can read the settings in their own jobs.** The QRMI settings, including API keys, must be in the job's environment because the job accesses the quantum resources directly. The hooks keep them out of the job attributes, the datastore and the logs, but a user can still print them from inside a job. Hiding the credentials from users completely requires a different design, such as a proxy that holds the credentials on behalf of the jobs.
-- **Configuration changes after submission.** `qrmi_validate` checks the request when the job is submitted. If a resource is removed from `qrmi_config.json` after that, `qrmi_check` rejects the job at every scheduling cycle and the job stays in the queue. Delete such jobs with `qdel`. (Errors that QRMI reports as permanent, such as revoked credentials, put the job on hold instead.)
+- **Configuration changes after submission.** `qrmi_validate` checks the request when the job is submitted. If a resource is removed from `qrmi_config.json` or its type is changed after that, `qrmi_check` puts the job on hold, like a permanent QRMI error. A `runjob` hook cannot end a job; delete such jobs with `qdel`, or fix the configuration and release them with `qrls -h s`.
 - **Classification of errors.** Only the QRMI exceptions listed in [Running QPU Jobs](#running-qpu-jobs) are treated as permanent. Other QRMI errors (subclasses of `qrmi.QrmiError`) are treated as temporary. Errors that are not QRMI errors are logged with a traceback as `unexpected error`; search `server_logs` and `mom_logs` for it after changing a hook or the configuration. The list of permanent errors is defined in `qrmi_validate.PY` and `qrmi_check.PY` (`QRMI_PERMANENT_ERRORS`). If the installed QRMI does not provide some of these classes, the hooks log `QRMI does not provide ...` and treat those errors as temporary.
 - **Submission time.** For QPU jobs, `qsub` takes a little longer because `qrmi_validate` checks the status of each requested resource.
 - **Check and acquisition are not atomic.** `qrmi_check` only checks the status; it does not reserve the resource. If another job takes the resource before `qrmi_acquire` runs on the compute node, the job is rejected there and retried, and the compute node it was sent to is left unused for that short time.
+- **Multi-node jobs.** The acquisition tokens exist only on the first node of the job (`qrmi_acquire` and `qrmi_release` run there). `qrmi_launch` also runs on the other nodes for tasks started through the PBS TM interface, and adds the resource settings there, but it cannot add the tokens. With Open MPI, `mpirun` passes its own environment, including the tokens, to all ranks, so every rank has both the settings and the tokens (checked with Open MPI 4.1 and TM). Processes started without `mpirun`, for example with `pbsdsh`, do not get the tokens on the other nodes (checked), and other MPI implementations may not pass them either. To check, run inside a job:
+
+  ```bash
+  mpirun sh -c 'echo "$(hostname): $(env | grep -c "^[^=]*_QRMI_JOB_ACQUISITION_TOKEN=") token(s)"'
+  pbsdsh -- sh -c 'echo "$(hostname): $(env | grep -c "^[^=]*_QRMI_JOB_ACQUISITION_TOKEN=") token(s)"'
+  ```
+
+  With `mpirun`, every node should print 1 token per resource. With `pbsdsh`, the other nodes print 0 (only the first node has the tokens).
+
+  If a process needs the tokens but does not get them, pass them explicitly (for example `mpirun -x <name>_QRMI_JOB_ACQUISITION_TOKEN`). Because `qrmi_launch` changes the job environment on every node of the job, keep `$logevent 0xff` on all compute nodes.
 - **Node failures.** If the job's first node or its `pbs_mom` stops while the job is running, `qrmi_release` cannot run there and the resources may remain acquired. The token file on that node shows what to release.
 - **Scheduling delay.** `qrmi_check` calls the QRMI status API for each resource inside the `pbs_server` process. Slow responses delay scheduling. Adjust `QRMI_ALARM` according to the actual response times.
 - **Concurrency counters.** The counter name is derived from the resource name (`qrmi_<name>`); keep `counter_resource()` in `qrmi_validate.PY` and `install_qrmi_hooks.sh` in sync. Counters of resources removed from `qrmi_config.json` are not deleted by the installation script; delete them with `qmgr -c "delete resource qrmi_<name>"` after removing them from `sched_config`. `quantum_resources` of a running job cannot be changed with `qalter`.
