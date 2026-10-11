@@ -24,6 +24,34 @@ import json
 import traceback
 import pbs
 
+# Prefix of the log messages of this hook ("grep qrmi_release" in the PBS logs)
+HOOK_NAME = "qrmi_release"
+
+
+# Log levels used by the QRMI hooks:
+#   pbs.LOG_ERROR   -- the administrator must act: a bug, broken settings, a held
+#                      job, or quantum resources that may remain acquired
+#   pbs.LOG_WARNING -- a request was rejected, or the job is retried (once per event)
+#   LOG_TRACE       -- normal progress, and the reasons why a job waits (repeated at
+#                      every scheduling cycle while it waits)
+# pbs.LOG_ERROR, pbs.LOG_WARNING and pbs.LOG_DEBUG are all logged with event class
+# 0x0006 (always logged); they only differ in the syslog severity. LOG_TRACE uses
+# event class 0x0400 (pbs.EVENT_DEBUG3), which is not logged by default. To see it:
+#   server: qmgr -c "set server log_events = 1535"   (default 511)
+#   MOM:    $logevent 0x4ff in mom_priv/config, then SIGHUP pbs_mom
+#           (do not enable 0x0100: pbs_mom logs the job environment with it)
+LOG_TRACE = pbs.EVENT_DEBUG3
+
+# Job shown in the log messages (set after the event is read)
+LOG_JOB = None
+
+
+def log(level, msg):
+    """Writes a message to the PBS log (server_logs or mom_logs), prefixed with the
+    hook name and the job"""
+    prefix = f"{HOOK_NAME}: {LOG_JOB}: " if LOG_JOB else f"{HOOK_NAME}: "
+    pbs.logmsg(level, prefix + msg)
+
 # Directory where QRMI is installed for PBS hooks
 # (pip install --target /opt/pbs/python/site-packages "qrmi[ibm]")
 QRMI_SITE_PACKAGES = "/opt/pbs/python/site-packages"
@@ -73,22 +101,25 @@ def qrmi_base_errors(qrmi_module):
     base = getattr(qrmi_module, "QrmiError", None)
     if isinstance(base, type) and issubclass(base, BaseException):
         return (base,)
-    pbs.logmsg(pbs.LOG_WARNING, "qrmi.QrmiError not found; QRMI errors are logged as unexpected errors")
+    log(pbs.LOG_WARNING, "qrmi.QrmiError not found; QRMI errors are logged as unexpected errors")
     return ()
 
 
 def log_unexpected(context, err):
-    """Logs an unexpected (non-QRMI) error with its traceback, on one log line"""
+    """Logs an unexpected (non-QRMI) error with its traceback, on one log line.
+    context: e.g. the resource name, or None for the whole hook"""
     tb = traceback.format_exc().strip().replace("\n", " | ")
-    pbs.logmsg(
+    prefix = f"{context}: " if context else ""
+    log(
         pbs.LOG_ERROR,
-        f"{context}: unexpected error (possibly a bug in the hook or invalid settings): "
+        f"{prefix}unexpected error (possibly a bug in the hook or invalid settings): "
         f"{type(err).__name__}: {err} | {tb}",
     )
 
 
 e = pbs.event()
 j = e.job
+LOG_JOB = j.id
 
 try:
     # execjob_end runs on every host of the job. The resources are acquired and
@@ -128,7 +159,7 @@ try:
         cfg_by_name = load_qrmi_config()
     except Exception as err:
         # Continue with the values in the job attributes only
-        pbs.logmsg(pbs.LOG_ERROR, f"Cannot read the QRMI configuration on this host: {err}")
+        log(pbs.LOG_ERROR, f"Cannot read the QRMI configuration on this host: {err}")
         cfg_by_name = {}
 
     released = set()
@@ -144,7 +175,7 @@ try:
 
         res_type = RES_TYPE_MAP.get(type_name)
         if res_type is None:
-            pbs.logmsg(
+            log(
                 pbs.LOG_ERROR,
                 f"{name}: unknown resource type '{type_name}'. Not released (token {token}).",
             )
@@ -155,19 +186,19 @@ try:
             qrmi_config["QRMI_JOB_ACQUISITION_TOKEN"] = token
             qrmi = QuantumResource.from_config(name, res_type, qrmi_config)
             qrmi.release(token)
-            pbs.logmsg(pbs.LOG_DEBUG, f"{name}, {type_name} released = {token}")
+            log(LOG_TRACE, f"{name}, {type_name} released = {token}")
 
         except qrmi_errors as err:
             # The remaining resources are still released. The token is logged so
             # that the administrator can release the resource manually.
-            pbs.logmsg(
+            log(
                 pbs.LOG_ERROR,
                 f"{name}, {type_name} release failed (token {token}): {type(err).__name__}: {err}",
             )
 
         except Exception as err:
             # Not a QRMI error: probably a bug or invalid settings
-            log_unexpected(f"{name}: qrmi_release (token {token})", err)
+            log_unexpected(f"{name} (token {token})", err)
 
     # The job has ended; the tokens are not needed any more
     os.remove(path)
@@ -175,5 +206,5 @@ try:
     e.accept()
 
 except Exception as ex:
-    log_unexpected("qrmi_release", ex)
+    log_unexpected(None, ex)
     e.reject(f"execjob_end failed: {ex}")
