@@ -123,6 +123,27 @@ def parse_quantum_resources(value):
     return result
 
 
+def unavailable_reason(status, slots):
+    """Returns why the quantum resource cannot be used now, or None if it can:
+    not online, not healthy, busy, or fewer free slots than requested.
+    healthy, busy and capacity are None for resource types that do not support
+    them (QRMI >= 0.26.0); status_reason, if reported, is added to the reason.
+    ResourceStatusCode is imported from qrmi (only for QPU jobs) before this is called.
+    Keep this in sync between qrmi_check.PY and qrmi_acquire.PY."""
+    reason_txt = f" (reason: {status.status_reason})" if status.status_reason is not None else ""
+    if status.status != ResourceStatusCode.Online:
+        # Maintenance, calibration, or other operational activities
+        return f"not online{reason_txt}"
+    if status.healthy is False:
+        return f"not healthy{reason_txt}"
+    if status.busy is True:
+        return f"busy{reason_txt}"
+    capacity = status.capacity  # ResourceCapacity, or None (no slots)
+    if capacity is not None and capacity.available_slots < slots:
+        return f"{slots} slots requested, {capacity.available_slots} available{reason_txt}"
+    return None
+
+
 def masked(name, value):
     """Returns the value for logging, hiding values that look like secrets"""
     if any(hint in name.upper() for hint in SECRET_HINTS):
@@ -244,46 +265,13 @@ try:
             )
             status = qrmi.status()
             log(LOG_TRACE, f"status = {json.dumps(status.to_dict(), indent=2)}")
-            # ResourceStatus (QRMI >= 0.26.0): status_reason, healthy, busy and
-            # capacity are None for resource types that do not support them.
-            # status_reason, if reported, is added to the log messages below.
-            reason = status.status_reason
-            reason_txt = f" (reason: {reason})" if reason is not None else ""
-
-            if status.status != ResourceStatusCode.Online:
-                # The quantum resource cannot accept jobs due to maintenance,
-                # calibration, or other operational activities.
-                log(LOG_TRACE, f"{name} is unaccessible{reason_txt}. The job waits in the queue.")
-                wait_reasons[name] = f"not online{reason_txt}"
+            # The slots may also be used by users outside PBS, so the free slots
+            # are checked here, with the current status.
+            why = unavailable_reason(status, requested[name])
+            if why is not None:
+                log(LOG_TRACE, f"{name} is unavailable: {why}. The job waits in the queue.")
+                wait_reasons[name] = why
                 continue
-
-            # Online but reported as not healthy: wait. None (not supported) is ignored.
-            if status.healthy is False:
-                log(LOG_TRACE, f"{name} is not healthy{reason_txt}. The job waits in the queue.")
-                wait_reasons[name] = f"not healthy{reason_txt}"
-                continue
-
-            # Busy: wait. None (not supported) is ignored.
-            if status.busy is True:
-                # The quantum resource is online but currently busy.
-                log(LOG_TRACE, f"{name} is busy{reason_txt}. The job waits in the queue.")
-                wait_reasons[name] = f"busy{reason_txt}"
-                continue
-
-            # Resources that report their capacity: the job needs at least the
-            # requested number of free slots. The slots may also be used by users
-            # outside PBS, so this is checked here, with the current status.
-            slots = requested[name]
-            capacity = status.capacity  # ResourceCapacity, or None (no slots)
-            if capacity is not None:
-                available = capacity.available_slots  # int
-                if available < slots:
-                    log(
-                        LOG_TRACE,
-                        f"{name}: {slots} slots requested, {available} available{reason_txt}. The job waits in the queue.",
-                    )
-                    wait_reasons[name] = f"{slots} slots requested, {available} available{reason_txt}"
-                    continue
 
             log(LOG_TRACE, f"{name} is accessible")
             res_names.append(name)

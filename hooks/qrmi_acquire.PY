@@ -135,6 +135,27 @@ def log_unexpected(context, err):
     )
 
 
+def unavailable_reason(status, slots):
+    """Returns why the quantum resource cannot be used now, or None if it can:
+    not online, not healthy, busy, or fewer free slots than requested.
+    healthy, busy and capacity are None for resource types that do not support
+    them (QRMI >= 0.26.0); status_reason, if reported, is added to the reason.
+    ResourceStatusCode is imported from qrmi (only for QPU jobs) before this is called.
+    Keep this in sync between qrmi_check.PY and qrmi_acquire.PY."""
+    reason_txt = f" (reason: {status.status_reason})" if status.status_reason is not None else ""
+    if status.status != ResourceStatusCode.Online:
+        # Maintenance, calibration, or other operational activities
+        return f"not online{reason_txt}"
+    if status.healthy is False:
+        return f"not healthy{reason_txt}"
+    if status.busy is True:
+        return f"busy{reason_txt}"
+    capacity = status.capacity  # ResourceCapacity, or None (no slots)
+    if capacity is not None and capacity.available_slots < slots:
+        return f"{slots} slots requested, {capacity.available_slots} available{reason_txt}"
+    return None
+
+
 class AcquireFailed(Exception):
     """Raised when some quantum resources could not be acquired"""
 
@@ -176,7 +197,7 @@ try:
     if QRMI_SITE_PACKAGES not in sys.path:
         sys.path.insert(0, QRMI_SITE_PACKAGES)
     import qrmi as qrmi_module
-    from qrmi import QuantumResource, ResourceType
+    from qrmi import QuantumResource, ResourceType, ResourceStatusCode
 
     # Keep this in sync with qrmi_check.PY, qrmi_release.PY and qrmi_validate.PY
     RES_TYPE_MAP = {
@@ -218,6 +239,15 @@ try:
         try:
             qrmi_config = build_qrmi_config(name, cfg_by_name.get(name), j.Variable_List)
             qrmi = QuantumResource.from_config(name, res_type, qrmi_config)
+            # Check the status again: the resource may have become unavailable
+            # since qrmi_check checked it on the server. Then the job goes back
+            # to the queue instead of acquiring a resource that cannot be used.
+            slots = int(j.Variable_List.get(f"{name}_QRMI_JOB_QPU_SLOTS") or 1)
+            why = unavailable_reason(qrmi.status(), slots)
+            if why is not None:
+                log(pbs.LOG_WARNING, f"{name} is unavailable: {why}. The job goes back to the queue.")
+                failures.append(f"{name}: {why}")
+                continue
             token = qrmi.acquire()
             acquired.append((name, qrmi, token))
             # Save after each acquisition, so that the token is not lost even if
@@ -238,9 +268,10 @@ try:
             failures.append(f"{name}: unexpected error ({type(err).__name__})")
 
     if failures:
-        # The resource may have been taken by another job after qrmi_check
-        # confirmed that it was available. Release what was acquired in this run
-        # and reject the job.
+        # The resource may have become unavailable, or been taken by another job,
+        # after qrmi_check confirmed that it was available. Release what was
+        # acquired in this run and reject the job: the MOM discards the job and
+        # the server puts it back in the queue (execjob_end does not run).
         raise AcquireFailed(f"Failed to acquire quantum resources: {'; '.join(failures)}")
 
     e.accept()
