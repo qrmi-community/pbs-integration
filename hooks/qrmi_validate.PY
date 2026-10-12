@@ -60,9 +60,18 @@ def log(level, msg):
     prefix = f"{HOOK_NAME}: {LOG_JOB}: " if LOG_JOB else f"{HOOK_NAME}: "
     pbs.logmsg(level, prefix + msg)
 
-# Directory where QRMI is installed for PBS hooks
-# (pip install --target /opt/pbs/python/site-packages "qrmi[ibm]")
-QRMI_SITE_PACKAGES = "/opt/pbs/python/site-packages"
+# Default directory where QRMI is installed for PBS hooks
+# (pip install --target /opt/pbs/python/site-packages "qrmi[ibm]"). Another directory
+# can be set with "qrmi_site_packages" in qrmi_config.json.
+DEFAULT_QRMI_SITE_PACKAGES = "/opt/pbs/python/site-packages"
+
+
+def add_qrmi_path(cfg_json):
+    """Adds the QRMI installation directory ("qrmi_site_packages" in qrmi_config.json,
+    or the default) to the module search path"""
+    path = (cfg_json or {}).get("qrmi_site_packages") or DEFAULT_QRMI_SITE_PACKAGES
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 # Default PBS_HOME
 DEFAULT_PBS_HOME = "/var/spool/pbs"
@@ -314,8 +323,7 @@ try:
 
     # Check each resource with QRMI, to reject errors that do not go away by
     # waiting (e.g. invalid credentials) now instead of keeping the job in the queue.
-    if QRMI_SITE_PACKAGES not in sys.path:
-        sys.path.insert(0, QRMI_SITE_PACKAGES)
+    add_qrmi_path(cfg_json)
     try:
         import qrmi
         from qrmi import QuantumResource, ResourceType
