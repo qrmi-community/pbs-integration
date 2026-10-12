@@ -276,8 +276,8 @@ try:
             slots = requested[name]
             capacity = status.capacity  # ResourceCapacity, or None (no slots)
             if capacity is not None:
-                available = capacity.available_slots
-                if available is not None and int(available) < slots:
+                available = capacity.available_slots  # int
+                if available < slots:
                     log(
                         LOG_TRACE,
                         f"{name}: {slots} slots requested, {available} available{reason_txt}. The job waits in the queue.",

@@ -149,12 +149,13 @@ def warn_capacity_mismatch(name, status, server):
             return
         capacity = status.capacity  # ResourceCapacity, or None (no slots)
         max_slots = 1 if capacity is None else capacity.max_slots
-        if max_slots is not None and int(limit) not in (0, int(max_slots)):
+        # limit is a PBS resource value; max_slots is an int (QRMI)
+        if int(limit) not in (0, max_slots):
             log(
                 pbs.LOG_WARNING,
                 f"{name}: server resources_available.{res_name} = {int(limit)}, but QRMI reports "
-                f"max_slots = {int(max_slots)}{' (no capacity)' if capacity is None else ''}. "
-                f"Set it with: qmgr -c \"set server resources_available.{res_name} = {int(max_slots)}\"",
+                f"max_slots = {max_slots}{' (no capacity)' if capacity is None else ''}. "
+                f"Set it with: qmgr -c \"set server resources_available.{res_name} = {max_slots}\"",
             )
     except Exception as err:
         log(pbs.LOG_WARNING, f"{name}: cannot compare the capacity: {err}")
