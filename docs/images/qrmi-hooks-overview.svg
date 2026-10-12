@@ -30,17 +30,22 @@
 <text x="237" y="194" font-size="13.5" font-weight="bold" fill="#1e3a8a">qrmi_validate</text>
 <text x="212" y="216" font-size="11.5" fill="#1e40af">queuejob, modifyjob</text>
 <g font-size="12.5" fill="#1e3a8a">
-<text x="212" y="246" xml:space="preserve">At qsub / qalter:</text>
-<text x="212" y="264" xml:space="preserve">names, types, slots</text>
-<text x="212" y="282" xml:space="preserve">(name:N) and</text>
-<text x="212" y="300" xml:space="preserve">status() of each QPU</text>
-<text x="212" y="322" xml:space="preserve">✓ qrmi_&lt;name&gt; = N</text>
-<text x="212" y="344" xml:space="preserve">✕ invalid, N > limit,</text>
-<text x="212" y="360" xml:space="preserve">  auth error etc.</text>
-<text x="212" y="376" xml:space="preserve">  → qsub error</text>
+<text x="212" y="243" xml:space="preserve">At qsub / qalter:</text>
+<text x="212" y="259" xml:space="preserve">checks names, types,</text>
+<text x="212" y="275" xml:space="preserve">N, status() of QPUs</text>
+<text x="212" y="360" xml:space="preserve">✕ invalid, N > limit,</text>
+<text x="212" y="375" xml:space="preserve">  auth error etc.</text>
+<text x="212" y="390" xml:space="preserve">  → qsub error</text>
 </g>
 <rect x="212" y="402" width="52" height="19" rx="5" fill="#fef9c3" stroke="#ca8a04"/><text x="238.0" y="416" font-size="11" fill="#713f12" text-anchor="middle">config</text>
 <rect x="270" y="402" width="82" height="19" rx="5" fill="#e2e8f0" stroke="#64748b"/><text x="311.0" y="416" font-size="11" fill="#334155" text-anchor="middle">job attrs ✎</text>
+<rect x="209" y="283" width="144" height="62" rx="6" fill="#ffffff" stroke="#2563eb" stroke-dasharray="4 3"/>
+<g font-family="DejaVu Sans Mono, Menlo, monospace" font-size="10.5" fill="#1e3a8a">
+<text x="215" y="297">quantum_resources=</text>
+<text x="229" y="310">ibm_kingston:2</text>
+<text x="281" y="323" font-family="DejaVu Sans, sans-serif" font-size="11" text-anchor="middle" fill="#2563eb">↓ sets</text>
+<text x="215" y="338" font-weight="bold">qrmi_ibm_kingston=2</text>
+</g>
 <rect x="382" y="232" width="96" height="160" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-width="2"/>
 <text x="430" y="258" font-size="15" font-weight="bold" fill="#1e293b" text-anchor="middle">Queue</text>
 <text x="430" y="276" font-size="13" fill="#334155" text-anchor="middle">(Q)</text>
@@ -57,11 +62,11 @@
 <text x="535" y="194" font-size="13.5" font-weight="bold" fill="#1e3a8a">qrmi_check</text>
 <text x="510" y="216" font-size="11.5" fill="#1e40af">runjob</text>
 <g font-size="12.5" fill="#1e3a8a">
-<text x="510" y="246" xml:space="preserve">status() of each QPU:</text>
-<text x="510" y="264" xml:space="preserve">online, healthy, not</text>
-<text x="510" y="282" xml:space="preserve">busy, enough slots?</text>
+<text x="510" y="246" xml:space="preserve">status(): is each QPU</text>
+<text x="510" y="264" xml:space="preserve">ready? (online, healthy,</text>
+<text x="510" y="282" xml:space="preserve">not busy, enough slots)</text>
 <text x="510" y="306" xml:space="preserve">✓ send the job to a node</text>
-<text x="510" y="326" xml:space="preserve">✕ not available → queue</text>
+<text x="510" y="326" xml:space="preserve">✕ not ready → Q</text>
 <text x="510" y="342" xml:space="preserve">  (reason in comment)</text>
 <text x="510" y="362" xml:space="preserve">✕ auth error etc. → hold</text>
 <text x="510" y="384" xml:space="preserve">sets job info (no secrets)</text>
@@ -75,11 +80,13 @@
 <text x="762" y="216" font-size="11.5" fill="#166534">execjob_begin</text>
 <g font-size="12.5" fill="#14532d">
 <text x="762" y="246" xml:space="preserve">first node only</text>
-<text x="762" y="274" xml:space="preserve">acquire() each QPU</text>
-<text x="762" y="292" xml:space="preserve">(N slots) and save</text>
-<text x="762" y="310" xml:space="preserve">the tokens</text>
-<text x="762" y="338" xml:space="preserve">✕ release what was</text>
-<text x="762" y="356" xml:space="preserve">  acquired, reject</text>
+<text x="762" y="270" xml:space="preserve">status() again, then</text>
+<text x="762" y="288" xml:space="preserve">acquire() each QPU</text>
+<text x="762" y="306" xml:space="preserve">(N slots), save the</text>
+<text x="762" y="324" xml:space="preserve">tokens</text>
+<text x="762" y="348" xml:space="preserve">✕ not ready or failed:</text>
+<text x="762" y="364" xml:space="preserve">  release what was</text>
+<text x="762" y="380" xml:space="preserve">  acquired, reject</text>
 </g>
 <rect x="762" y="402" width="38" height="19" rx="5" fill="#fef9c3" stroke="#ca8a04"/><text x="781.0" y="416" font-size="11" fill="#713f12" text-anchor="middle">.CF</text>
 <rect x="806" y="402" width="66" height="19" rx="5" fill="#ffedd5" stroke="#ea580c"/><text x="839.0" y="416" font-size="11" fill="#7c2d12" text-anchor="middle">tokens ✎</text>
@@ -135,9 +142,10 @@
 
 <!-- Retry loops -->
 <path d="M598,432 V452 H448 V396" fill="none" stroke="#c2410c" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrRetry)"/>
-<text x="600" y="467" font-size="12" fill="#c2410c" text-anchor="middle">not available → wait in the queue</text>
-<path d="M835,432 V488 H410 V396" fill="none" stroke="#c2410c" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrRetry)"/>
-<text x="560" y="505" font-size="12" fill="#c2410c" text-anchor="middle">acquire failed (taken after the check) → retried later</text>
+<text x="590" y="466" font-size="12" fill="#c2410c" text-anchor="middle">QPU not ready → back to Q,</text>
+<text x="590" y="480" font-size="12" fill="#c2410c" text-anchor="middle">retried at the next scheduling cycle</text>
+<path d="M835,432 V492 H410 V396" fill="none" stroke="#c2410c" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrRetry)"/>
+<text x="550" y="508" font-size="12" fill="#c2410c" text-anchor="middle">QPU not ready or taken after the check → back to Q</text>
 
 <!-- QRMI API calls -->
 <g stroke="#7c3aed" stroke-width="1.8" fill="none">
@@ -150,7 +158,7 @@
 <g font-size="12" fill="#6d28d9">
 <text x="336" y="130">status()</text>
 <text x="654" y="130">status()</text>
-<text x="866" y="130">acquire()</text>
+<text x="866" y="130">status(), acquire()</text>
 <text x="1196" y="130">QPU jobs</text>
 <text x="1376" y="130">release()</text>
 </g>
