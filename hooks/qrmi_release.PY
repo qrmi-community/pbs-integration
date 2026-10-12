@@ -96,15 +96,6 @@ def state_path(job_id):
     return os.path.join(get_pbs_home(), "mom_priv", "qrmi", f"{job_id}.json")
 
 
-def qrmi_base_errors(qrmi_module):
-    """Returns the QRMI error classes (qrmi.QrmiError, the base class of all QRMI errors)"""
-    base = getattr(qrmi_module, "QrmiError", None)
-    if isinstance(base, type) and issubclass(base, BaseException):
-        return (base,)
-    log(pbs.LOG_WARNING, "qrmi.QrmiError not found; QRMI errors are logged as unexpected errors")
-    return ()
-
-
 def log_unexpected(context, err):
     """Logs an unexpected (non-QRMI) error with its traceback, on one log line.
     context: e.g. the resource name, or None for the whole hook"""
@@ -141,7 +132,6 @@ try:
     import qrmi as qrmi_module
     from qrmi import QuantumResource, ResourceType
 
-    qrmi_errors = qrmi_base_errors(qrmi_module)
 
     # Keep this in sync with qrmi_check.PY, qrmi_acquire.PY and qrmi_validate.PY
     RES_TYPE_MAP = {
@@ -188,7 +178,7 @@ try:
             qrmi.release(token)
             log(LOG_TRACE, f"{name}, {type_name} released = {token}")
 
-        except qrmi_errors as err:
+        except qrmi_module.QrmiError as err:
             # The remaining resources are still released. The token is logged so
             # that the administrator can release the resource manually.
             log(
