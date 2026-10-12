@@ -91,7 +91,7 @@ Install it into `/opt/pbs/python/site-packages`, the directory that the hooks ad
 
 ```bash
 for c in pbs-server pbs-node1 pbs-node2; do
-  docker exec $c python3.12 -m pip install --target /opt/pbs/python/site-packages "qrmi[ibm]>=0.26.0"
+  docker exec $c python3.12 -m pip install --target /opt/pbs/python/site-packages "qrmi>=0.26.0"
 done
 ```
 
