@@ -123,15 +123,6 @@ def save_state(path, state):
     os.replace(tmp_path, path)
 
 
-def qrmi_base_errors(qrmi_module):
-    """Returns the QRMI error classes (qrmi.QrmiError, the base class of all QRMI errors)"""
-    base = getattr(qrmi_module, "QrmiError", None)
-    if isinstance(base, type) and issubclass(base, BaseException):
-        return (base,)
-    log(pbs.LOG_WARNING, "qrmi.QrmiError not found; QRMI errors are logged as unexpected errors")
-    return ()
-
-
 def log_unexpected(context, err):
     """Logs an unexpected (non-QRMI) error with its traceback, on one log line.
     context: e.g. the resource name, or None for the whole hook"""
@@ -204,7 +195,6 @@ try:
         dict.fromkeys(zip(resnames.split(delimiter), restypes.split(delimiter)))
     )
 
-    qrmi_errors = qrmi_base_errors(qrmi_module)
 
     cfg_by_name = load_qrmi_config()
 
@@ -236,7 +226,7 @@ try:
             save_state(path, state)
             log(LOG_TRACE, f"{name}, {type_name} acquired: {token}")
 
-        except qrmi_errors as err:
+        except qrmi_module.QrmiError as err:
             # QRMI error, e.g. the resource was taken by another job after
             # qrmi_check confirmed that it was available
             log(pbs.LOG_WARNING, f"{name}: QRMI error at acquisition ({type(err).__name__}: {err})")

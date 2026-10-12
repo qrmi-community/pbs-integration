@@ -142,34 +142,6 @@ def build_qrmi_config(name, cfg, variable_list):
     return config
 
 
-def qrmi_error_classes(qrmi_module):
-    """Returns (permanent, qrmi_errors):
-    permanent   -- QRMI exception classes for errors that do not go away by waiting
-                   (qrmi.AuthenticationFailedError, ...)
-    qrmi_errors -- all QRMI errors (qrmi.QrmiError, the base class of the above)
-    Classes that the installed QRMI version does not provide are skipped and logged."""
-
-    def is_exception(cls):
-        return isinstance(cls, type) and issubclass(cls, BaseException)
-
-    base = getattr(qrmi_module, "QrmiError", None)
-    permanent = []
-    missing = []
-    for class_name in QRMI_PERMANENT_ERRORS:
-        cls = getattr(qrmi_module, class_name, None)
-        if is_exception(cls):
-            permanent.append(cls)
-        else:
-            missing.append(class_name)
-    if missing:
-        log(
-            pbs.LOG_WARNING,
-            f"QRMI does not provide {', '.join(missing)}; these errors are treated as temporary",
-        )
-    qrmi_errors = (base,) if is_exception(base) else tuple(permanent)
-    return tuple(permanent), qrmi_errors
-
-
 def log_unexpected(context, err):
     """Logs an unexpected (non-QRMI) error with its traceback, on one log line.
     context: e.g. the resource name, or None for the whole hook"""
@@ -220,7 +192,14 @@ try:
         cfg_json = json.load(f)
     cfg_by_name = {r["name"]: r for r in cfg_json["resources"]}
 
-    permanent_errors, qrmi_errors = qrmi_error_classes(qrmi_module)
+    # QRMI errors that do not go away by waiting (QRMI >= 0.26.0); see QRMI_PERMANENT_ERRORS
+    permanent_errors = (
+        qrmi_module.AuthenticationFailedError,
+        qrmi_module.ResourceNotFoundError,
+        qrmi_module.InvalidInputError,
+        qrmi_module.UnsupportedResourceTypeError,
+        qrmi_module.ConfigError,
+    )
 
     res_names = []
     res_types = []
@@ -315,7 +294,7 @@ try:
             log(pbs.LOG_ERROR, f"{name}: {type(err).__name__}: {err}")
             permanent_failures.append(f"{name}: {reason}")
 
-        except qrmi_errors as err:
+        except qrmi_module.QrmiError as err:
             # Temporary QRMI error (e.g. network): the job waits in the queue. Logged
             # at every scheduling cycle while it lasts, so as a debug message. The
             # error text may contain settings; only its type goes to the comment.
