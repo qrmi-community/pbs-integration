@@ -52,9 +52,18 @@ def log(level, msg):
     prefix = f"{HOOK_NAME}: {LOG_JOB}: " if LOG_JOB else f"{HOOK_NAME}: "
     pbs.logmsg(level, prefix + msg)
 
-# Directory where QRMI is installed for PBS hooks
-# (pip install --target /opt/pbs/python/site-packages "qrmi[ibm]")
-QRMI_SITE_PACKAGES = "/opt/pbs/python/site-packages"
+# Default directory where QRMI is installed for PBS hooks
+# (pip install --target /opt/pbs/python/site-packages "qrmi[ibm]"). Another directory
+# can be set with "qrmi_site_packages" in qrmi_config.json.
+DEFAULT_QRMI_SITE_PACKAGES = "/opt/pbs/python/site-packages"
+
+
+def add_qrmi_path(cfg_json):
+    """Adds the QRMI installation directory ("qrmi_site_packages" in qrmi_config.json,
+    or the default) to the module search path"""
+    path = (cfg_json or {}).get("qrmi_site_packages") or DEFAULT_QRMI_SITE_PACKAGES
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 # Default PBS_HOME
 DEFAULT_PBS_HOME = "/var/spool/pbs"
@@ -70,13 +79,12 @@ def get_pbs_home():
 
 
 def load_qrmi_config():
-    """Returns the QRMI configuration as {resource name: resource config}"""
+    """Returns the QRMI configuration (the contents of qrmi_config.json)"""
     cfg_path = getattr(pbs, "hook_config_filename", None)
     if not cfg_path:
         cfg_path = os.path.join(get_pbs_home(), "mom_priv", "qrmi_config.json")
     with open(cfg_path, "r", encoding="utf8") as f:
-        cfg_json = json.load(f)
-    return {r["name"]: r for r in cfg_json["resources"]}
+        return json.load(f)
 
 
 def build_qrmi_config(name, cfg, variable_list):
@@ -126,9 +134,16 @@ try:
     with open(path, "r", encoding="utf8") as f:
         state = json.load(f)
 
+    try:
+        cfg_json = load_qrmi_config()
+    except Exception as err:
+        # Continue with the default QRMI directory and the values in the job
+        # attributes only, so that the resources are still released if possible
+        log(pbs.LOG_ERROR, f"Cannot read the QRMI configuration on this host: {err}")
+        cfg_json = {"resources": []}
+
     # QRMI is imported only for jobs that acquired quantum resources
-    if QRMI_SITE_PACKAGES not in sys.path:
-        sys.path.insert(0, QRMI_SITE_PACKAGES)
+    add_qrmi_path(cfg_json)
     import qrmi as qrmi_module
     from qrmi import QuantumResource, ResourceType
 
@@ -145,12 +160,7 @@ try:
         "oqtopus": ResourceType.OQTOPUS,
     }
 
-    try:
-        cfg_by_name = load_qrmi_config()
-    except Exception as err:
-        # Continue with the values in the job attributes only
-        log(pbs.LOG_ERROR, f"Cannot read the QRMI configuration on this host: {err}")
-        cfg_by_name = {}
+    cfg_by_name = {r["name"]: r for r in cfg_json.get("resources", [])}
 
     released = set()
     for entry in state.get("resources", []):

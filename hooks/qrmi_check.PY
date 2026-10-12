@@ -57,9 +57,18 @@ def log(level, msg):
     prefix = f"{HOOK_NAME}: {LOG_JOB}: " if LOG_JOB else f"{HOOK_NAME}: "
     pbs.logmsg(level, prefix + msg)
 
-# Directory where QRMI is installed for PBS hooks
-# (pip install --target /opt/pbs/python/site-packages "qrmi[ibm]")
-QRMI_SITE_PACKAGES = "/opt/pbs/python/site-packages"
+# Default directory where QRMI is installed for PBS hooks
+# (pip install --target /opt/pbs/python/site-packages "qrmi[ibm]"). Another directory
+# can be set with "qrmi_site_packages" in qrmi_config.json.
+DEFAULT_QRMI_SITE_PACKAGES = "/opt/pbs/python/site-packages"
+
+
+def add_qrmi_path(cfg_json):
+    """Adds the QRMI installation directory ("qrmi_site_packages" in qrmi_config.json,
+    or the default) to the module search path"""
+    path = (cfg_json or {}).get("qrmi_site_packages") or DEFAULT_QRMI_SITE_PACKAGES
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 # Default is 6 hours
 DEFAULT_WALLTIME = pbs.duration(21600)
@@ -123,6 +132,27 @@ def parse_quantum_resources(value):
     return result
 
 
+def unavailable_reason(status, slots):
+    """Returns why the quantum resource cannot be used now, or None if it can:
+    not online, not healthy, busy, or fewer free slots than requested.
+    healthy, busy and capacity are None for resource types that do not support
+    them (QRMI >= 0.26.0); status_reason, if reported, is added to the reason.
+    ResourceStatusCode is imported from qrmi (only for QPU jobs) before this is called.
+    Keep this in sync between qrmi_check.PY and qrmi_acquire.PY."""
+    reason_txt = f" (reason: {status.status_reason})" if status.status_reason is not None else ""
+    if status.status != ResourceStatusCode.Online:
+        # Maintenance, calibration, or other operational activities
+        return f"not online{reason_txt}"
+    if status.healthy is False:
+        return f"not healthy{reason_txt}"
+    if status.busy is True:
+        return f"busy{reason_txt}"
+    capacity = status.capacity  # ResourceCapacity, or None (no slots)
+    if capacity is not None and capacity.available_slots < slots:
+        return f"{slots} slots requested, {capacity.available_slots} available{reason_txt}"
+    return None
+
+
 def masked(name, value):
     """Returns the value for logging, hiding values that look like secrets"""
     if any(hint in name.upper() for hint in SECRET_HINTS):
@@ -164,10 +194,16 @@ try:
         # This is not QPU job. Returns immediately
         e.accept()
 
+    # We assume that qrmi_config.json is located in the $PBS_HOME/server_priv directory,
+    # which is not accessible to regular PBS users.
+    cfg_path = os.path.join(get_pbs_home(), "server_priv", "qrmi_config.json")
+    with open(cfg_path, "r", encoding="utf8") as f:
+        cfg_json = json.load(f)
+    cfg_by_name = {r["name"]: r for r in cfg_json["resources"]}
+
     # QRMI is imported only for QPU jobs, so that a problem with the QRMI
     # installation does not block jobs that do not use quantum resources.
-    if QRMI_SITE_PACKAGES not in sys.path:
-        sys.path.insert(0, QRMI_SITE_PACKAGES)
+    add_qrmi_path(cfg_json)
     import qrmi as qrmi_module
     from qrmi import QuantumResource, ResourceType, ResourceStatusCode
 
@@ -184,13 +220,6 @@ try:
     }
 
     walltime = get_pbs_res("walltime", job, DEFAULT_WALLTIME)
-
-    # We assume that qrmi_config.json is located in the $PBS_HOME/server_priv directory,
-    # which is not accessible to regular PBS users.
-    cfg_path = os.path.join(get_pbs_home(), "server_priv", "qrmi_config.json")
-    with open(cfg_path, "r", encoding="utf8") as f:
-        cfg_json = json.load(f)
-    cfg_by_name = {r["name"]: r for r in cfg_json["resources"]}
 
     # QRMI errors that do not go away by waiting (QRMI >= 0.26.0); see QRMI_PERMANENT_ERRORS
     permanent_errors = (
@@ -244,46 +273,13 @@ try:
             )
             status = qrmi.status()
             log(LOG_TRACE, f"status = {json.dumps(status.to_dict(), indent=2)}")
-            # ResourceStatus (QRMI >= 0.26.0): status_reason, healthy, busy and
-            # capacity are None for resource types that do not support them.
-            # status_reason, if reported, is added to the log messages below.
-            reason = status.status_reason
-            reason_txt = f" (reason: {reason})" if reason is not None else ""
-
-            if status.status != ResourceStatusCode.Online:
-                # The quantum resource cannot accept jobs due to maintenance,
-                # calibration, or other operational activities.
-                log(LOG_TRACE, f"{name} is unaccessible{reason_txt}. The job waits in the queue.")
-                wait_reasons[name] = f"not online{reason_txt}"
+            # The slots may also be used by users outside PBS, so the free slots
+            # are checked here, with the current status.
+            why = unavailable_reason(status, requested[name])
+            if why is not None:
+                log(LOG_TRACE, f"{name} is unavailable: {why}. The job waits in the queue.")
+                wait_reasons[name] = why
                 continue
-
-            # Online but reported as not healthy: wait. None (not supported) is ignored.
-            if status.healthy is False:
-                log(LOG_TRACE, f"{name} is not healthy{reason_txt}. The job waits in the queue.")
-                wait_reasons[name] = f"not healthy{reason_txt}"
-                continue
-
-            # Busy: wait. None (not supported) is ignored.
-            if status.busy is True:
-                # The quantum resource is online but currently busy.
-                log(LOG_TRACE, f"{name} is busy{reason_txt}. The job waits in the queue.")
-                wait_reasons[name] = f"busy{reason_txt}"
-                continue
-
-            # Resources that report their capacity: the job needs at least the
-            # requested number of free slots. The slots may also be used by users
-            # outside PBS, so this is checked here, with the current status.
-            slots = requested[name]
-            capacity = status.capacity  # ResourceCapacity, or None (no slots)
-            if capacity is not None:
-                available = capacity.available_slots
-                if available is not None and int(available) < slots:
-                    log(
-                        LOG_TRACE,
-                        f"{name}: {slots} slots requested, {available} available{reason_txt}. The job waits in the queue.",
-                    )
-                    wait_reasons[name] = f"{slots} slots requested, {available} available{reason_txt}"
-                    continue
 
             log(LOG_TRACE, f"{name} is accessible")
             res_names.append(name)

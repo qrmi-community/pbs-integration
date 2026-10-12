@@ -60,9 +60,18 @@ def log(level, msg):
     prefix = f"{HOOK_NAME}: {LOG_JOB}: " if LOG_JOB else f"{HOOK_NAME}: "
     pbs.logmsg(level, prefix + msg)
 
-# Directory where QRMI is installed for PBS hooks
-# (pip install --target /opt/pbs/python/site-packages "qrmi[ibm]")
-QRMI_SITE_PACKAGES = "/opt/pbs/python/site-packages"
+# Default directory where QRMI is installed for PBS hooks
+# (pip install --target /opt/pbs/python/site-packages "qrmi[ibm]"). Another directory
+# can be set with "qrmi_site_packages" in qrmi_config.json.
+DEFAULT_QRMI_SITE_PACKAGES = "/opt/pbs/python/site-packages"
+
+
+def add_qrmi_path(cfg_json):
+    """Adds the QRMI installation directory ("qrmi_site_packages" in qrmi_config.json,
+    or the default) to the module search path"""
+    path = (cfg_json or {}).get("qrmi_site_packages") or DEFAULT_QRMI_SITE_PACKAGES
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 # Default PBS_HOME
 DEFAULT_PBS_HOME = "/var/spool/pbs"
@@ -149,12 +158,13 @@ def warn_capacity_mismatch(name, status, server):
             return
         capacity = status.capacity  # ResourceCapacity, or None (no slots)
         max_slots = 1 if capacity is None else capacity.max_slots
-        if max_slots is not None and int(limit) not in (0, int(max_slots)):
+        # limit is a PBS resource value; max_slots is an int (QRMI)
+        if int(limit) not in (0, max_slots):
             log(
                 pbs.LOG_WARNING,
                 f"{name}: server resources_available.{res_name} = {int(limit)}, but QRMI reports "
-                f"max_slots = {int(max_slots)}{' (no capacity)' if capacity is None else ''}. "
-                f"Set it with: qmgr -c \"set server resources_available.{res_name} = {int(max_slots)}\"",
+                f"max_slots = {max_slots}{' (no capacity)' if capacity is None else ''}. "
+                f"Set it with: qmgr -c \"set server resources_available.{res_name} = {max_slots}\"",
             )
     except Exception as err:
         log(pbs.LOG_WARNING, f"{name}: cannot compare the capacity: {err}")
@@ -313,8 +323,7 @@ try:
 
     # Check each resource with QRMI, to reject errors that do not go away by
     # waiting (e.g. invalid credentials) now instead of keeping the job in the queue.
-    if QRMI_SITE_PACKAGES not in sys.path:
-        sys.path.insert(0, QRMI_SITE_PACKAGES)
+    add_qrmi_path(cfg_json)
     try:
         import qrmi
         from qrmi import QuantumResource, ResourceType
