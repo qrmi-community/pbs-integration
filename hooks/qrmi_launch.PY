@@ -23,6 +23,7 @@ is used.
 
 import os
 import json
+import pwd
 import pbs
 
 # Prefix of the log messages of this hook ("grep qrmi_launch" in the PBS logs)
@@ -98,6 +99,10 @@ try:
     names = list(dict.fromkeys(n for n in resnames.split(delimiter) if n))
 
     cfg_by_name = load_qrmi_config()
+
+    # Pasqal Local identifies the job's Warden session by its owner and ID
+    e.env["QRMI_JOB_UID"] = str(pwd.getpwnam(j.Job_Owner.split("@")[0]).pw_uid)
+    e.env["QRMI_JOB_ID"] = j.id
 
     for name in names:
         cfg = cfg_by_name.get(name)
