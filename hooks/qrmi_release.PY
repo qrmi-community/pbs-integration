@@ -21,6 +21,7 @@ is used.
 import os
 import sys
 import json
+import pwd
 import traceback
 import pbs
 
@@ -87,15 +88,21 @@ def load_qrmi_config():
         return json.load(f)
 
 
-def build_qrmi_config(name, cfg, variable_list):
+def build_qrmi_config(name, cfg, job):
     """Returns the configuration passed to QRMI (keys without the "{name}_" prefix):
     the settings in the QRMI configuration, overridden by the job's "{name}_QRMI_*"
-    variables (e.g. the user's own API token specified with qsub -v)."""
+    variables (e.g. the user's own API token specified with qsub -v), and the job's
+    owner and ID."""
     config = {k: str(v) for k, v in (cfg or {}).get("environment", {}).items()}
     prefix = f"{name}_"
-    for key, value in variable_list.items():
+    for key, value in job.Variable_List.items():
         if key.startswith(f"{prefix}QRMI_"):
             config[key[len(prefix):]] = value
+    # Pasqal Local opens its Warden session for the job's owner and ID. Set after the
+    # user's variables, so that a job cannot act for another user. At submission
+    # (queuejob) PBS has not assigned the job ID yet.
+    config["QRMI_JOB_UID"] = str(pwd.getpwnam(job.Job_Owner.split("@")[0]).pw_uid)
+    config["QRMI_JOB_ID"] = job.id or ""
     return config
 
 
@@ -182,8 +189,10 @@ try:
             continue
 
         try:
-            qrmi_config = build_qrmi_config(name, cfg_by_name.get(name), j.Variable_List)
+            qrmi_config = build_qrmi_config(name, cfg_by_name.get(name), j)
             qrmi_config["QRMI_JOB_ACQUISITION_TOKEN"] = token
+            # QRMI 0.26 Pasqal Local reads the token from the environment, not from its argument
+            os.environ[f"{name}_QRMI_JOB_ACQUISITION_TOKEN"] = token
             qrmi = QuantumResource.from_config(name, res_type, qrmi_config)
             qrmi.release(token)
             log(LOG_TRACE, f"{name}, {type_name} released = {token}")

@@ -157,6 +157,9 @@ Supported resource types:
 | `iqm-server` | `IQMServer` |
 | `oqtopus` | `OQTOPUS` |
 
+`pasqal-local` authenticates users to Warden with MUNGE: it needs a QRMI built with
+the `munge` feature (the PyPI wheel is not), and `munged` with Warden's key on all nodes.
+
 Copy the file into the server's private directory. Do **not** put it in `shared/`, which is visible on the host and in all containers:
 
 ```bash

@@ -29,6 +29,7 @@ import os
 import re
 import sys
 import json
+import pwd
 import traceback
 import pbs
 
@@ -190,15 +191,21 @@ def get_pbs_res(res_name, pbs_job, default_value=None):
     return default_value
 
 
-def build_qrmi_config(name, cfg, variable_list):
+def build_qrmi_config(name, cfg, job):
     """Returns the configuration passed to QRMI (keys without the "{name}_" prefix):
     the settings in the QRMI configuration, overridden by the job's "{name}_QRMI_*"
-    variables (e.g. the user's own API token specified with qsub -v)."""
+    variables (e.g. the user's own API token specified with qsub -v), and the job's
+    owner and ID."""
     config = {k: str(v) for k, v in (cfg or {}).get("environment", {}).items()}
     prefix = f"{name}_"
-    for key, value in (variable_list or {}).items():
+    for key, value in (job.Variable_List or {}).items():
         if key.startswith(f"{prefix}QRMI_"):
             config[key[len(prefix):]] = value
+    # Pasqal Local opens its Warden session for the job's owner and ID. Set after the
+    # user's variables, so that a job cannot act for another user. At submission
+    # (queuejob) PBS has not assigned the job ID yet.
+    config["QRMI_JOB_UID"] = str(pwd.getpwnam(job.Job_Owner.split("@")[0]).pw_uid)
+    config["QRMI_JOB_ID"] = job.id or ""
     return config
 
 
@@ -356,7 +363,7 @@ try:
     for name in names:
         cfg = cfg_by_name[name]
         try:
-            qrmi_config = build_qrmi_config(name, cfg, job.Variable_List)
+            qrmi_config = build_qrmi_config(name, cfg, job)
             resource = QuantumResource.from_config(name, RES_TYPE_MAP[cfg["type"]], qrmi_config)
             status = resource.status()
             warn_capacity_mismatch(name, status, server)
